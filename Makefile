@@ -18,7 +18,10 @@ SRC_DIR = src
 SOURCES = $(SRC_DIR)/main.m
 OBJECTS = $(SOURCES:.m=.o)
 
-.PHONY: all app run clean check-libxml2
+PARSER_TEST_BIN = $(BUILD_DIR)/parse-test
+PARSER_SOURCES  = src/HTMLParserEngine.m tools/parse_test.m
+
+.PHONY: all app run clean check-libxml2 test-parser
 
 all: app
 
@@ -46,3 +49,13 @@ check-libxml2:
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -I/usr/include/libxml2 tools/check_libxml2.c -lxml2 -o $(BUILD_DIR)/check-libxml2
 	$(BUILD_DIR)/check-libxml2
+
+# Phase 1: HTMLParserEngineをGUI無しで単体テスト
+# 例: make test-parser FILE=tools/sample.html
+test-parser: $(PARSER_TEST_BIN)
+	@if [ -z "$(FILE)" ]; then echo "FILEを指定してください 例: make test-parser FILE=tools/sample.html"; exit 1; fi
+	$(PARSER_TEST_BIN) $(FILE) $(BASE)
+
+$(PARSER_TEST_BIN): $(PARSER_SOURCES) src/HTMLParserEngine.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I/usr/include/libxml2 $(PARSER_SOURCES) -lxml2 $(LDFLAGS) -o $@

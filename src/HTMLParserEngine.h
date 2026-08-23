@@ -1,0 +1,40 @@
+#import <Cocoa/Cocoa.h>
+
+/* ページ内の見出し1件(左ペインのナビ用) */
+@interface PWRHeading : NSObject
+{
+    NSString *title;
+    int level;                 /* 1〜3 (h1-h3) */
+    unsigned int bodyLocation; /* 本文NSAttributedString中の対応位置 */
+}
+
+- (id)initWithTitle:(NSString *)aTitle level:(int)aLevel bodyLocation:(unsigned int)aLocation;
+- (NSString *)title;
+- (int)level;
+- (unsigned int)bodyLocation;
+
+@end
+
+/* HTMLパース結果一式(左ペイン/中央ペイン/右ペインの元データ) */
+@interface PWRParsedPage : NSObject
+{
+    NSArray *headings;
+    NSAttributedString *bodyText;
+    NSArray *imageURLs;
+}
+
+- (id)initWithHeadings:(NSArray *)aHeadings
+               bodyText:(NSAttributedString *)aBodyText
+              imageURLs:(NSArray *)anImageURLs;
+- (NSArray *)headings;
+- (NSAttributedString *)bodyText;
+- (NSArray *)imageURLs;
+
+@end
+
+/* libxml2ベースのHTML→構造化データ変換エンジン */
+@interface HTMLParserEngine : NSObject
+
++ (PWRParsedPage *)parsePageFromData:(NSData *)htmlData baseURL:(NSURL *)baseURL;
+
+@end
