@@ -26,14 +26,17 @@
     NSArray *headings;
     NSAttributedString *bodyText;
     NSArray *imageURLs;
+    NSString *pageTitle; /* <title>タグの内容。無ければnil */
 }
 
 - (id)initWithHeadings:(NSArray *)aHeadings
                bodyText:(NSAttributedString *)aBodyText
-              imageURLs:(NSArray *)anImageURLs;
+              imageURLs:(NSArray *)anImageURLs
+              pageTitle:(NSString *)aPageTitle;
 - (NSArray *)headings;
 - (NSAttributedString *)bodyText;
 - (NSArray *)imageURLs;
+- (NSString *)pageTitle;
 
 @end
 

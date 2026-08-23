@@ -20,6 +20,7 @@
     NSButton *backButton;
     NSTextField *urlField;
     NSButton *openButton;
+    NSProgressIndicator *progressIndicator;
 
     NSMutableArray *navigationHistory; /* 戻る用: 訪問済みURLのスタック */
 

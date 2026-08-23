@@ -52,12 +52,14 @@
 
 - (id)initWithHeadings:(NSArray *)aHeadings
                bodyText:(NSAttributedString *)aBodyText
-              imageURLs:(NSArray *)anImageURLs {
+              imageURLs:(NSArray *)anImageURLs
+              pageTitle:(NSString *)aPageTitle {
     self = [super init];
     if (self) {
         headings = [aHeadings copy];
         bodyText = [aBodyText copy];
         imageURLs = [anImageURLs copy];
+        pageTitle = [aPageTitle copy];
     }
     return self;
 }
@@ -66,7 +68,12 @@
     [headings release];
     [bodyText release];
     [imageURLs release];
+    [pageTitle release];
     [super dealloc];
+}
+
+- (NSString *)pageTitle {
+    return pageTitle;
 }
 
 - (NSArray *)headings {
@@ -392,11 +399,23 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
         PWRAppendChildren(root, &ctx);
     }
 
+    /* ウィンドウタイトル表示用に<title>タグの中身も拾っておく */
+    NSString *pageTitle = nil;
+    xmlNode *titleNode = root ? PWRFindNodeByName(root, "title") : NULL;
+    if (titleNode) {
+        xmlChar *content = xmlNodeGetContent(titleNode);
+        if (content) {
+            pageTitle = PWRCollapseWhitespace(PWRStringFromXmlChar(content));
+            xmlFree(content);
+        }
+    }
+
     xmlFreeDoc(doc);
 
     PWRParsedPage *page = [[[PWRParsedPage alloc] initWithHeadings:ctx.headings
                                                             bodyText:ctx.body
-                                                           imageURLs:ctx.imageURLs] autorelease];
+                                                           imageURLs:ctx.imageURLs
+                                                           pageTitle:pageTitle] autorelease];
     [ctx.body release];
     return page;
 }

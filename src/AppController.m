@@ -157,13 +157,21 @@
     [topBarView addSubview:backButton];
 
     float urlFieldX = 8.0 + backButtonWidth + 8.0;
+    float spinnerWidth = 20.0;
     NSRect urlFieldFrame = NSMakeRect(urlFieldX, 7.0,
-                                       topBarFrame.size.width - urlFieldX - buttonWidth - 16.0, 22.0);
+                                       topBarFrame.size.width - urlFieldX - buttonWidth - spinnerWidth - 24.0, 22.0);
     urlField = [[NSTextField alloc] initWithFrame:urlFieldFrame];
     [urlField setAutoresizingMask:NSViewWidthSizable];
     [urlField setTarget:self];
     [urlField setAction:@selector(openAction:)];
     [topBarView addSubview:urlField];
+
+    NSRect spinnerFrame = NSMakeRect(NSMaxX(urlFieldFrame) + 6.0, 8.0, spinnerWidth, spinnerWidth);
+    progressIndicator = [[NSProgressIndicator alloc] initWithFrame:spinnerFrame];
+    [progressIndicator setAutoresizingMask:NSViewMinXMargin];
+    [progressIndicator setStyle:NSProgressIndicatorSpinningStyle];
+    [progressIndicator setDisplayedWhenStopped:NO];
+    [topBarView addSubview:progressIndicator];
 
     NSRect openButtonFrame = NSMakeRect(topBarFrame.size.width - buttonWidth - 8.0, 5.0, buttonWidth, 26.0);
     openButton = [[NSButton alloc] initWithFrame:openButtonFrame];
@@ -179,6 +187,7 @@
     [topBarView release];
     [backButton release];
     [urlField release];
+    [progressIndicator release];
     [openButton release];
 
     /* --- 3ペインsplit view(右ペインは既定で幅0=折りたたみ) --- */
@@ -388,6 +397,7 @@
     [headingTableView reloadData];
 
     [self setStatus:PWRL(@"loading") statusKey:@"loading"];
+    [progressIndicator startAnimation:nil];
 
     CurlTaskRunner *runner = [[CurlTaskRunner alloc] initWithDelegate:self];
     [runner fetchURL:url context:@"html"];
@@ -397,15 +407,16 @@
 #pragma mark - CurlTaskRunnerDelegate
 
 - (void)curlTaskRunner:(CurlTaskRunner *)runner didFinishWithData:(NSData *)data context:(id)context {
+    [progressIndicator stopAnimation:nil];
+
     if ([context isKindOfClass:[NSURL class]]) {
-        /* 画像取得の完了 */
+        /* 画像取得の完了。ページ自体は変わっていないのでウィンドウタイトルには触れない */
         NSImage *image = [[NSImage alloc] initWithData:data];
         if (image) {
             [imageView setImage:image];
             [image release];
             [self expandRightPane];
         }
-        [self setStatus:PWRL(@"ready") statusKey:@"ready"];
         return;
     }
 
@@ -419,6 +430,7 @@
 }
 
 - (void)curlTaskRunner:(CurlTaskRunner *)runner didFailWithError:(NSString *)message context:(id)context {
+    [progressIndicator stopAnimation:nil];
     [self setStatus:message statusKey:nil];
 
     NSAlert *alert = [NSAlert alertWithMessageText:PWRL(@"networkError")
@@ -438,7 +450,15 @@
     [[bodyTextView textStorage] setAttributedString:[page bodyText]];
     [headingTableView reloadData];
 
-    [self setStatus:PWRL(@"ready") statusKey:@"ready"];
+    /* ページに<title>があればウィンドウタイトルに反映する(通常のブラウザと同じ動作) */
+    NSString *pageTitle = [page pageTitle];
+    if ([pageTitle length] > 0) {
+        [currentStatusKey release];
+        currentStatusKey = nil;
+        [window setTitle:[NSString stringWithFormat:@"%@ - PPC-WebReader", pageTitle]];
+    } else {
+        [self setStatus:PWRL(@"ready") statusKey:@"ready"];
+    }
 }
 
 #pragma mark - NSTableViewDataSource / NSTableViewDelegate(非公式プロトコル)
@@ -484,7 +504,8 @@
     }
     NSURL *imageURL = (NSURL *)link;
 
-    [self setStatus:PWRL(@"loading") statusKey:@"loading"];
+    /* 画像取得中はウィンドウタイトル(ページタイトル表示)を変えず、スピナーのみ回す */
+    [progressIndicator startAnimation:nil];
 
     CurlTaskRunner *runner = [[CurlTaskRunner alloc] initWithDelegate:self];
     [runner fetchURL:imageURL context:imageURL];
