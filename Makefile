@@ -1,0 +1,46 @@
+# PPC-WebReader ビルド設定
+# PowerMac G4 (Mac OS X 10.4 Tiger) 上のXcode 2.5付属gcc/ldでのビルドを前提とする。
+# Xcodeプロジェクトファイルは使わず、SSH越しに `make` だけで完結させる。
+
+APP_NAME   = PPC-WebReader
+BUILD_DIR  = build
+APP_BUNDLE = $(BUILD_DIR)/$(APP_NAME).app
+CONTENTS   = $(APP_BUNDLE)/Contents
+MACOS_DIR  = $(CONTENTS)/MacOS
+
+CC      ?= gcc
+CFLAGS  = -Wall -mmacosx-version-min=10.4 -Isrc
+LDFLAGS = -framework Cocoa
+
+SRC_DIR = src
+SOURCES = $(SRC_DIR)/main.m
+OBJECTS = $(SOURCES:.m=.o)
+
+.PHONY: all app run clean check-libxml2
+
+all: app
+
+app: $(MACOS_DIR)/$(APP_NAME) $(CONTENTS)/Info.plist
+
+$(MACOS_DIR)/$(APP_NAME): $(OBJECTS)
+	@mkdir -p $(MACOS_DIR)
+	$(CC) $(OBJECTS) $(LDFLAGS) -o $@
+
+$(CONTENTS)/Info.plist: Resources/Info.plist
+	@mkdir -p $(CONTENTS)
+	cp $< $@
+
+%.o: %.m
+	$(CC) $(CFLAGS) -c $< -o $@
+
+run: app
+	open $(APP_BUNDLE)
+
+clean:
+	rm -rf $(BUILD_DIR) $(SRC_DIR)/*.o
+
+# Phase 0: libxml2がTigerに標準搭載されているかの疎通確認
+check-libxml2:
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -I/usr/include/libxml2 tools/check_libxml2.c -lxml2 -o $(BUILD_DIR)/check-libxml2
+	$(BUILD_DIR)/check-libxml2
