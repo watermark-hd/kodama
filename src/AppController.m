@@ -2,6 +2,45 @@
 #import "PWRCompat.h"
 #import "PWRLocalization.h"
 
+/* 戻る履歴1件分(URL+当時のページタイトル)。
+ * 「戻る」ボタンを右クリックした時の履歴一覧メニュー表示に使う。 */
+@interface PWRHistoryEntry : NSObject
+{
+    NSURL *url;
+    NSString *title;
+}
+- (id)initWithURL:(NSURL *)aURL title:(NSString *)aTitle;
+- (NSURL *)url;
+- (NSString *)title;
+@end
+
+@implementation PWRHistoryEntry
+
+- (id)initWithURL:(NSURL *)aURL title:(NSString *)aTitle {
+    self = [super init];
+    if (self) {
+        url = [aURL retain];
+        title = [aTitle copy];
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [url release];
+    [title release];
+    [super dealloc];
+}
+
+- (NSURL *)url {
+    return url;
+}
+
+- (NSString *)title {
+    return title;
+}
+
+@end
+
 @interface AppController (PWRPrivate)
 - (void)buildMenuBar;
 - (void)buildWindow;
@@ -13,6 +52,7 @@
 - (void)displayParsedPage:(PWRParsedPage *)page;
 - (void)collapseRightPane;
 - (void)expandRightPane;
+- (void)rebuildHistoryMenu;
 @end
 
 @implementation AppController
@@ -35,6 +75,7 @@
 
     [self buildMenuBar];
     [self buildWindow];
+    [self rebuildHistoryMenu];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                               selector:@selector(languageDidChange:)
@@ -367,11 +408,15 @@
 }
 
 /* 現在表示中のページがあれば履歴に積んでから新しいページへ移動する。
- * (URL欄からの入力・見出しリンクのクリックの両方から呼ばれる) */
+ * (URL欄からの入力・見出しリンクのクリック・本文中のリンクのクリック全てから呼ばれる) */
 - (void)navigateToURL:(NSURL *)url {
     if (currentBaseURL) {
-        [navigationHistory addObject:currentBaseURL];
+        PWRHistoryEntry *entry = [[PWRHistoryEntry alloc] initWithURL:currentBaseURL
+                                                                  title:[currentPage pageTitle]];
+        [navigationHistory addObject:entry];
+        [entry release];
         [backButton setEnabled:YES];
+        [self rebuildHistoryMenu];
     }
     [self loadURL:url];
 }
@@ -380,11 +425,52 @@
     if ([navigationHistory count] == 0) {
         return;
     }
-    NSURL *previous = [[navigationHistory lastObject] retain];
+    PWRHistoryEntry *previous = [[navigationHistory lastObject] retain];
     [navigationHistory removeLastObject];
     [backButton setEnabled:([navigationHistory count] > 0)];
-    [self loadURL:previous];
+    [self rebuildHistoryMenu];
+    [self loadURL:[previous url]];
     [previous release];
+}
+
+/* 戻るボタンを右クリック(control+クリック)した時に出す履歴一覧から、
+ * 指定のページへ直接ジャンプする。それより新しい履歴は通常のブラウザ同様に破棄する。 */
+- (void)jumpToHistoryEntry:(id)sender {
+    int index = [sender tag];
+    if (index < 0 || (unsigned int)index >= [navigationHistory count]) {
+        return;
+    }
+    PWRHistoryEntry *entry = [[navigationHistory objectAtIndex:index] retain];
+    [navigationHistory removeObjectsInRange:NSMakeRange(index, [navigationHistory count] - index)];
+    [backButton setEnabled:([navigationHistory count] > 0)];
+    [self rebuildHistoryMenu];
+    [self loadURL:[entry url]];
+    [entry release];
+}
+
+/* 戻るボタンの右クリックメニューを、現在の履歴内容に合わせて作り直す。
+ * 直近に訪れたページを上に表示する(古いものほど下)。 */
+- (void)rebuildHistoryMenu {
+    NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
+    int index = [navigationHistory count] - 1;
+    NSEnumerator *e = [navigationHistory reverseObjectEnumerator];
+    PWRHistoryEntry *entry;
+    while ((entry = [e nextObject])) {
+        NSString *displayTitle = [entry title];
+        if ([displayTitle length] == 0) {
+            displayTitle = [[entry url] absoluteString];
+        }
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:displayTitle
+                                                        action:@selector(jumpToHistoryEntry:)
+                                                 keyEquivalent:@""];
+        [item setTarget:self];
+        [item setTag:index];
+        [menu addItem:item];
+        [item release];
+        index--;
+    }
+    [backButton setMenu:menu];
+    [menu release];
 }
 
 /* 履歴には積まずにページを読み込む(戻る操作専用の下位メソッド) */
@@ -500,13 +586,22 @@
     [bodyTextView scrollRangeToVisible:range];
 }
 
-#pragma mark - NSTextViewDelegate(非公式プロトコル): 画像リンクのクリック
+#pragma mark - NSTextViewDelegate(非公式プロトコル): 本文中のリンクのクリック
 
 - (BOOL)textView:(NSTextView *)textView clickedOnLink:(id)link atIndex:(unsigned)charIndex {
-    if (![link isKindOfClass:[NSURL class]]) {
+    if (![link isKindOfClass:[PWRLinkTarget class]]) {
         return NO;
     }
-    NSURL *imageURL = (NSURL *)link;
+    PWRLinkTarget *target = (PWRLinkTarget *)link;
+
+    if ([target kind] == PWRLinkKindPage) {
+        /* 関連ニュース/アクセスランキング等、本文中の通常のテキストリンクをクリックした場合。
+         * 見出しリンクと同じくページ遷移として扱う */
+        [self navigateToURL:[target url]];
+        return YES;
+    }
+
+    NSURL *imageURL = [target url];
 
     /* 画像取得中はウィンドウタイトル(ページタイトル表示)を変えず、スピナーのみ回す */
     [progressIndicator startAnimation:nil];

@@ -1,5 +1,25 @@
 #import <Cocoa/Cocoa.h>
 
+/* 本文中のクリック可能なリンクの種別。
+ * NSTextViewのNSLinkAttributeNameに素のNSURLを入れると「画像を表示」と
+ * 「ページへ遷移」を区別できないため、種別付きのラッパーとして使う。 */
+typedef enum {
+    PWRLinkKindImage = 0,
+    PWRLinkKindPage = 1
+} PWRLinkKind;
+
+@interface PWRLinkTarget : NSObject
+{
+    NSURL *url;
+    PWRLinkKind kind;
+}
+
+- (id)initWithURL:(NSURL *)aURL kind:(PWRLinkKind)aKind;
+- (NSURL *)url;
+- (PWRLinkKind)kind;
+
+@end
+
 /* ページ内の見出し1件(左ペインのナビ用) */
 @interface PWRHeading : NSObject
 {

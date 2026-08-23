@@ -3,6 +3,94 @@
 #include <libxml/HTMLparser.h>
 #include <libxml/tree.h>
 #include <libxml/xmlstring.h>
+#include <string.h>
+
+#pragma mark - script/styleの生テキスト除去(libxml2に渡す前の前処理)
+
+/* このlibxml2(2.6.16)のHTMLパーサーは、<script>の中身をHTML5仕様通りの
+ * 「閉じタグが出るまで完全な生テキスト」として扱えないことがある。
+ * 実際のニュースサイトで、JSのテンプレートリテラル内に書かれた
+ * "<div class=...>" のようなタグっぽい文字列を見て、誤ってscript要素の
+ * 外に出たと誤認識し、以降のJSコードがそのまま本文に漏れて表示される
+ * 問題を確認した。パーサーに渡す前に、生バイト列の段階で該当タグの
+ * 中身を確実に取り除いてこれを回避する。 */
+static NSData *PWRStripTagBlock(NSData *data, const char *tagName) {
+    NSMutableData *working = [NSMutableData dataWithData:data];
+    [working appendBytes:"\0" length:1]; /* strcasestr/strchr用にNUL終端 */
+
+    const char *base = (const char *)[working bytes];
+    long totalLen = (long)[working length] - 1;
+
+    char openTag[24];
+    char closeTag[24];
+    snprintf(openTag, sizeof(openTag), "<%s", tagName);
+    snprintf(closeTag, sizeof(closeTag), "</%s", tagName);
+
+    NSMutableData *result = [NSMutableData dataWithCapacity:(unsigned)totalLen];
+    long pos = 0;
+    while (pos < totalLen) {
+        const char *foundOpen = strcasestr(base + pos, openTag);
+        if (!foundOpen) {
+            [result appendBytes:(base + pos) length:(totalLen - pos)];
+            break;
+        }
+        long openStart = foundOpen - base;
+        [result appendBytes:(base + pos) length:(openStart - pos)];
+
+        const char *gt = strchr(foundOpen, '>');
+        if (!gt) {
+            /* 開始タグ自体が壊れている場合はそれ以降を丸ごと捨てて終了 */
+            break;
+        }
+        long afterOpenTag = (gt - base) + 1;
+
+        const char *foundClose = strcasestr(base + afterOpenTag, closeTag);
+        long nextPos;
+        if (foundClose) {
+            const char *closeGt = strchr(foundClose, '>');
+            nextPos = closeGt ? (closeGt - base) + 1 : totalLen;
+        } else {
+            nextPos = totalLen; /* 閉じタグが無ければ末尾まで捨てる */
+        }
+        pos = nextPos;
+    }
+
+    return result;
+}
+
+static NSData *PWRStripRawTextBlocks(NSData *htmlData) {
+    NSData *noScript = PWRStripTagBlock(htmlData, "script");
+    NSData *noStyle = PWRStripTagBlock(noScript, "style");
+    return noStyle;
+}
+
+#pragma mark - PWRLinkTarget
+
+@implementation PWRLinkTarget
+
+- (id)initWithURL:(NSURL *)aURL kind:(PWRLinkKind)aKind {
+    self = [super init];
+    if (self) {
+        url = [aURL retain];
+        kind = aKind;
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [url release];
+    [super dealloc];
+}
+
+- (NSURL *)url {
+    return url;
+}
+
+- (PWRLinkKind)kind {
+    return kind;
+}
+
+@end
 
 #pragma mark - PWRHeading
 
@@ -293,13 +381,42 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
                  * 仕様書にある絵文字プレースホルダーは使わずASCII安全な表記にする */
                 NSString *placeholder = [NSString stringWithFormat:PWRJPStr("[ 画像%lu を表示 ]"), index];
 
+                PWRLinkTarget *target = [[PWRLinkTarget alloc] initWithURL:resolved kind:PWRLinkKindImage];
                 NSMutableDictionary *attrs = [NSMutableDictionary dictionary];
-                [attrs setObject:resolved forKey:NSLinkAttributeName];
+                [attrs setObject:target forKey:NSLinkAttributeName];
                 [attrs setObject:[NSColor blueColor] forKey:NSForegroundColorAttributeName];
                 NSAttributedString *link = [[NSAttributedString alloc] initWithString:placeholder attributes:attrs];
                 [ctx->body appendAttributedString:link];
                 [link release];
+                [target release];
             }
+        }
+        return;
+    }
+
+    if (xmlStrcasecmp(name, (const xmlChar *)"a") == 0) {
+        xmlChar *hrefAttr = xmlGetProp(node, (const xmlChar *)"href");
+        NSURL *resolved = nil;
+        if (hrefAttr) {
+            NSString *hrefStr = PWRStringFromXmlChar(hrefAttr);
+            xmlFree(hrefAttr);
+            resolved = [[NSURL URLWithString:hrefStr relativeToURL:ctx->baseURL] absoluteURL];
+        }
+
+        unsigned int before = [ctx->body length];
+        PWRAppendChildren(node, ctx);
+        unsigned int after = [ctx->body length];
+
+        /* リンク先が取れた場合だけ、実際に流し込まれたテキスト範囲に
+         * クリック可能なページ遷移リンクとしての属性を後付けする。
+         * (関連ニュース/アクセスランキング等、見出しタグを使わない
+         * 一覧リンクを辿れるようにするための対応) */
+        if (resolved && after > before) {
+            PWRLinkTarget *target = [[PWRLinkTarget alloc] initWithURL:resolved kind:PWRLinkKindPage];
+            [ctx->body addAttribute:NSLinkAttributeName value:target range:NSMakeRange(before, after - before)];
+            [ctx->body addAttribute:NSForegroundColorAttributeName value:[NSColor blueColor]
+                               range:NSMakeRange(before, after - before)];
+            [target release];
         }
         return;
     }
@@ -328,6 +445,15 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
             }
 
             NSString *titleText = [[ctx->body string] substringWithRange:NSMakeRange(before, after - before)];
+            /* サイトによっては見出しタグの中に本文の抜粋(<p>等)がネストして
+             * いることがあり、そのままだと見出しリストに長大な文章が
+             * 表示されてしまう。見出しは本来1行のはずなので、最初の
+             * 改行で打ち切って左ペインの表示用テキストとする */
+            NSRange firstNewline = [titleText rangeOfString:@"\n"];
+            if (firstNewline.location != NSNotFound) {
+                titleText = [titleText substringToIndex:firstNewline.location];
+                titleText = [titleText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            }
             NSURL *headingLinkURL = PWRFindHrefInSubtree(node->children, ctx->baseURL);
             if (!headingLinkURL) {
                 headingLinkURL = PWRFindHrefInAncestors(node, ctx->baseURL);
@@ -345,8 +471,11 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
     }
 
     {
-        BOOL isBlock = xmlStrcasecmp(name, (const xmlChar *)"p") == 0 ||
-                       xmlStrcasecmp(name, (const xmlChar *)"li") == 0 ||
+        /* リスト項目は段落と違い前後に空白行を入れず、行頭に「・」を付けて
+         * 詰めて並べる(ランキング/関連記事一覧が間延びして見えるのを防ぐ) */
+        BOOL isListItem = xmlStrcasecmp(name, (const xmlChar *)"li") == 0;
+        BOOL isBlock = isListItem ||
+                       xmlStrcasecmp(name, (const xmlChar *)"p") == 0 ||
                        xmlStrcasecmp(name, (const xmlChar *)"blockquote") == 0 ||
                        xmlStrcasecmp(name, (const xmlChar *)"h4") == 0 ||
                        xmlStrcasecmp(name, (const xmlChar *)"h5") == 0 ||
@@ -355,12 +484,17 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
         if (isBlock) {
             PWREnsureSeparation(ctx);
         }
+        if (isListItem) {
+            PWRAppendPlain(PWRJPStr("・ "), ctx);
+        }
 
         /* div/article/section/ul/a/span/strongなどはここに落ちてきて、
          * 透過的なコンテナとして子要素をそのまま辿るだけになる */
         PWRAppendChildren(node, ctx);
 
-        if (isBlock) {
+        if (isListItem) {
+            PWRAppendPlain(@"\n", ctx);
+        } else if (isBlock) {
             PWRAppendPlain(@"\n\n", ctx);
         }
     }
@@ -375,10 +509,12 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
         return nil;
     }
 
+    NSData *cleanedData = PWRStripRawTextBlocks(htmlData);
+
     const char *urlCString = baseURL ? [[baseURL absoluteString] UTF8String] : NULL;
     /* このlibxml2(2.6.16, Tiger標準)にはHTML_PARSE_RECOVERが存在しない。
      * HTMLパーサーはデフォルトで壊れたHTMLを寛容に読むため無くても問題ない */
-    htmlDocPtr doc = htmlReadMemory([htmlData bytes], [htmlData length], urlCString, NULL,
+    htmlDocPtr doc = htmlReadMemory([cleanedData bytes], [cleanedData length], urlCString, NULL,
                                      HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING | HTML_PARSE_NONET);
     if (!doc) {
         return nil;
