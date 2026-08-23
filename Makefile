@@ -11,18 +11,19 @@ MACOS_DIR  = $(CONTENTS)/MacOS
 CC      ?= gcc
 # G4実機(Tiger)上でネイティブビルドするため、デプロイターゲット指定は不要
 # (このgcc 4.0.0はcc1objで-mmacosx-version-minを受け付けない)
-CFLAGS  = -Wall -Isrc
-LDFLAGS = -framework Cocoa
+CFLAGS  = -Wall -Isrc -I/usr/include/libxml2
+LDFLAGS = -framework Cocoa -lxml2
 
 SRC_DIR = src
-SOURCES = $(SRC_DIR)/main.m
+SOURCES = $(SRC_DIR)/main.m $(SRC_DIR)/AppController.m $(SRC_DIR)/HTMLParserEngine.m \
+          $(SRC_DIR)/CurlTaskRunner.m $(SRC_DIR)/PWRLocalization.m
 OBJECTS = $(SOURCES:.m=.o)
 
 PARSER_TEST_BIN = $(BUILD_DIR)/parse-test
-PARSER_SOURCES  = src/HTMLParserEngine.m tools/parse_test.m
+PARSER_SOURCES  = src/HTMLParserEngine.m src/PWRLocalization.m tools/parse_test.m
 
 CURL_TEST_BIN     = $(BUILD_DIR)/curl-test
-CURL_TEST_SOURCES = src/CurlTaskRunner.m tools/curl_test.m
+CURL_TEST_SOURCES = src/CurlTaskRunner.m src/PWRLocalization.m tools/curl_test.m
 
 .PHONY: all app run clean check-libxml2 test-parser test-curl
 
@@ -61,7 +62,7 @@ test-parser: $(PARSER_TEST_BIN)
 
 $(PARSER_TEST_BIN): $(PARSER_SOURCES) src/HTMLParserEngine.h
 	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -I/usr/include/libxml2 $(PARSER_SOURCES) -lxml2 $(LDFLAGS) -o $@
+	$(CC) $(CFLAGS) $(PARSER_SOURCES) $(LDFLAGS) -o $@
 
 # Phase 2: CurlTaskRunnerをGUI無しで単体テスト(実際にHTTPSサイトを取得する)
 # 例: make test-curl URL=https://example.com

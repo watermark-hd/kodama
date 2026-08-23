@@ -1,5 +1,6 @@
 #import "CurlTaskRunner.h"
 #import "PWRCompat.h"
+#import "PWRLocalization.h"
 
 @interface CurlTaskRunner (PWRPrivate)
 - (void)finalizeIfReady;
@@ -59,7 +60,7 @@
 - (void)fetchURL:(NSURL *)url context:(id)context {
     NSString *curlPath = [CurlTaskRunner detectCurlPath];
     if (!curlPath) {
-        NSString *msg = PWRJPStr("モダンなcurlが見つかりません(MacPortsやTigerbrewでインストールしてください)");
+        NSString *msg = PWRL(@"curlNotFound");
         [delegate curlTaskRunner:self didFailWithError:msg context:context];
         return;
     }
@@ -134,7 +135,7 @@
     if (terminationStatus == 0) {
         [delegate curlTaskRunner:self didFinishWithData:receivedData context:requestContext];
     } else {
-        NSString *msg = [NSString stringWithFormat:PWRJPStr("通信に失敗しました(curl終了コード %d)"), terminationStatus];
+        NSString *msg = [NSString stringWithFormat:PWRL(@"curlFailedFormat"), terminationStatus];
         [delegate curlTaskRunner:self didFailWithError:msg context:requestContext];
     }
 
