@@ -8,18 +8,23 @@
 
 @implementation PWRHeading
 
-- (id)initWithTitle:(NSString *)aTitle level:(int)aLevel bodyLocation:(unsigned int)aLocation {
+- (id)initWithTitle:(NSString *)aTitle
+              level:(int)aLevel
+       bodyLocation:(unsigned int)aLocation
+            linkURL:(NSURL *)aLinkURL {
     self = [super init];
     if (self) {
         title = [aTitle copy];
         level = aLevel;
         bodyLocation = aLocation;
+        linkURL = [aLinkURL retain];
     }
     return self;
 }
 
 - (void)dealloc {
     [title release];
+    [linkURL release];
     [super dealloc];
 }
 
@@ -29,6 +34,10 @@
 
 - (int)level {
     return level;
+}
+
+- (NSURL *)linkURL {
+    return linkURL;
 }
 
 - (unsigned int)bodyLocation {
@@ -167,6 +176,56 @@ static xmlNode *PWRFindNodeByName(xmlNode *node, const char *name) {
     return NULL;
 }
 
+/* 見出し内に最初に見つかった<a href>のリンク先を探す(見出し=リンクの判定用)。
+ * ポータルサイトのように見出しが実質「別記事へのリンク」であるケースに対応する。 */
+static NSURL *PWRFindHrefInSubtree(xmlNode *node, NSURL *baseURL) {
+    xmlNode *cur;
+    for (cur = node; cur; cur = cur->next) {
+        if (cur->type == XML_ELEMENT_NODE) {
+            if (xmlStrcasecmp(cur->name, (const xmlChar *)"a") == 0) {
+                xmlChar *href = xmlGetProp(cur, (const xmlChar *)"href");
+                if (href) {
+                    NSString *hrefStr = PWRStringFromXmlChar(href);
+                    xmlFree(href);
+                    NSURL *resolved = [[NSURL URLWithString:hrefStr relativeToURL:baseURL] absoluteURL];
+                    if (resolved) {
+                        return resolved;
+                    }
+                }
+            }
+            if (cur->children) {
+                NSURL *found = PWRFindHrefInSubtree(cur->children, baseURL);
+                if (found) {
+                    return found;
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
+/* 見出しの外側(祖先)に<a href>が無いか探す。
+ * <a href="..."><h3>見出し</h3></a> のように、見出しの方がリンクに
+ * 包まれているカード型マークアップ(ニュース一覧などで多い)に対応する。 */
+static NSURL *PWRFindHrefInAncestors(xmlNode *node, NSURL *baseURL) {
+    xmlNode *cur = node->parent;
+    while (cur && cur->type == XML_ELEMENT_NODE) {
+        if (xmlStrcasecmp(cur->name, (const xmlChar *)"a") == 0) {
+            xmlChar *href = xmlGetProp(cur, (const xmlChar *)"href");
+            if (href) {
+                NSString *hrefStr = PWRStringFromXmlChar(href);
+                xmlFree(href);
+                NSURL *resolved = [[NSURL URLWithString:hrefStr relativeToURL:baseURL] absoluteURL];
+                if (resolved) {
+                    return resolved;
+                }
+            }
+        }
+        cur = cur->parent;
+    }
+    return NULL;
+}
+
 static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx);
 
 static void PWRAppendChildren(xmlNode *node, PWRWalkContext *ctx) {
@@ -196,12 +255,16 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
 
     const xmlChar *name = node->name;
 
-    /* 中身ごと無視するタグ */
+    /* 中身ごと無視するタグ。
+     * <header>は記事タイトルを内包しているサイトもあるため対象外にしている。
+     * (ナビゲーションが多いポータルサイト等ではまだノイズが残りうる) */
     if (xmlStrcasecmp(name, (const xmlChar *)"script") == 0 ||
         xmlStrcasecmp(name, (const xmlChar *)"style") == 0 ||
         xmlStrcasecmp(name, (const xmlChar *)"head") == 0 ||
         xmlStrcasecmp(name, (const xmlChar *)"noscript") == 0 ||
-        xmlStrcasecmp(name, (const xmlChar *)"iframe") == 0) {
+        xmlStrcasecmp(name, (const xmlChar *)"iframe") == 0 ||
+        xmlStrcasecmp(name, (const xmlChar *)"nav") == 0 ||
+        xmlStrcasecmp(name, (const xmlChar *)"footer") == 0) {
         return;
     }
 
@@ -258,7 +321,14 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
             }
 
             NSString *titleText = [[ctx->body string] substringWithRange:NSMakeRange(before, after - before)];
-            PWRHeading *heading = [[PWRHeading alloc] initWithTitle:titleText level:headingLevel bodyLocation:before];
+            NSURL *headingLinkURL = PWRFindHrefInSubtree(node->children, ctx->baseURL);
+            if (!headingLinkURL) {
+                headingLinkURL = PWRFindHrefInAncestors(node, ctx->baseURL);
+            }
+            PWRHeading *heading = [[PWRHeading alloc] initWithTitle:titleText
+                                                                level:headingLevel
+                                                         bodyLocation:before
+                                                              linkURL:headingLinkURL];
             [ctx->headings addObject:heading];
             [heading release];
 

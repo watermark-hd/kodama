@@ -6,12 +6,17 @@
     NSString *title;
     int level;                 /* 1〜3 (h1-h3) */
     unsigned int bodyLocation; /* 本文NSAttributedString中の対応位置 */
+    NSURL *linkURL;            /* 見出しがリンクを内包している場合のリンク先(無ければnil) */
 }
 
-- (id)initWithTitle:(NSString *)aTitle level:(int)aLevel bodyLocation:(unsigned int)aLocation;
+- (id)initWithTitle:(NSString *)aTitle
+              level:(int)aLevel
+       bodyLocation:(unsigned int)aLocation
+            linkURL:(NSURL *)aLinkURL;
 - (NSString *)title;
 - (int)level;
 - (unsigned int)bodyLocation;
+- (NSURL *)linkURL;
 
 @end
 

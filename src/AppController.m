@@ -9,6 +9,7 @@
 - (void)refreshLocalizedText;
 - (void)setStatus:(NSString *)text statusKey:(NSString *)key;
 - (void)loadURL:(NSURL *)url;
+- (void)navigateToURL:(NSURL *)url;
 - (void)displayParsedPage:(PWRParsedPage *)page;
 - (void)collapseRightPane;
 - (void)expandRightPane;
@@ -23,12 +24,14 @@
     [currentPage release];
     [currentBaseURL release];
     [currentStatusKey release];
+    [navigationHistory release];
     [window release];
     [super dealloc];
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
     rightPaneExpandedWidth = 260.0;
+    navigationHistory = [[NSMutableArray alloc] init];
 
     [self buildMenuBar];
     [self buildWindow];
@@ -103,6 +106,7 @@
 }
 
 - (void)refreshLocalizedText {
+    [backButton setTitle:PWRL(@"back")];
     [openButton setTitle:PWRL(@"open")];
     [[headingColumn headerCell] setStringValue:PWRL(@"headings")];
     [quitMenuItem setTitle:PWRL(@"quit")];
@@ -140,7 +144,21 @@
     [topBarView setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
 
     float buttonWidth = 90.0;
-    NSRect urlFieldFrame = NSMakeRect(8.0, 7.0, topBarFrame.size.width - buttonWidth - 24.0, 22.0);
+    float backButtonWidth = 70.0;
+
+    NSRect backButtonFrame = NSMakeRect(8.0, 5.0, backButtonWidth, 26.0);
+    backButton = [[NSButton alloc] initWithFrame:backButtonFrame];
+    [backButton setAutoresizingMask:NSViewMaxXMargin];
+    [backButton setBezelStyle:NSRoundedBezelStyle];
+    [backButton setTitle:PWRL(@"back")];
+    [backButton setTarget:self];
+    [backButton setAction:@selector(backAction:)];
+    [backButton setEnabled:NO];
+    [topBarView addSubview:backButton];
+
+    float urlFieldX = 8.0 + backButtonWidth + 8.0;
+    NSRect urlFieldFrame = NSMakeRect(urlFieldX, 7.0,
+                                       topBarFrame.size.width - urlFieldX - buttonWidth - 16.0, 22.0);
     urlField = [[NSTextField alloc] initWithFrame:urlFieldFrame];
     [urlField setAutoresizingMask:NSViewWidthSizable];
     [urlField setTarget:self];
@@ -159,6 +177,7 @@
     [contentView addSubview:topBarView];
     [window setDefaultButtonCell:[openButton cell]];
     [topBarView release];
+    [backButton release];
     [urlField release];
     [openButton release];
 
@@ -331,13 +350,36 @@
         return;
     }
 
+    [self navigateToURL:url];
+}
+
+/* 現在表示中のページがあれば履歴に積んでから新しいページへ移動する。
+ * (URL欄からの入力・見出しリンクのクリックの両方から呼ばれる) */
+- (void)navigateToURL:(NSURL *)url {
+    if (currentBaseURL) {
+        [navigationHistory addObject:currentBaseURL];
+        [backButton setEnabled:YES];
+    }
     [self loadURL:url];
 }
 
+- (void)backAction:(id)sender {
+    if ([navigationHistory count] == 0) {
+        return;
+    }
+    NSURL *previous = [[navigationHistory lastObject] retain];
+    [navigationHistory removeLastObject];
+    [backButton setEnabled:([navigationHistory count] > 0)];
+    [self loadURL:previous];
+    [previous release];
+}
+
+/* 履歴には積まずにページを読み込む(戻る操作専用の下位メソッド) */
 - (void)loadURL:(NSURL *)url {
     [currentBaseURL release];
     currentBaseURL = [url retain];
 
+    [urlField setStringValue:[url absoluteString]];
     [self collapseRightPane];
 
     [currentPage release];
@@ -422,6 +464,14 @@
         return;
     }
     PWRHeading *heading = [[currentPage headings] objectAtIndex:row];
+
+    NSURL *link = [heading linkURL];
+    if (link) {
+        /* ポータルサイト等、見出しが実質「別記事へのリンク」の場合はページ遷移する */
+        [self navigateToURL:link];
+        return;
+    }
+
     NSRange range = NSMakeRange([heading bodyLocation], 1);
     [bodyTextView scrollRangeToVisible:range];
 }

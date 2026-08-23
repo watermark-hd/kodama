@@ -17,8 +17,11 @@
     NSWindow *window;
 
     NSView *topBarView;
+    NSButton *backButton;
     NSTextField *urlField;
     NSButton *openButton;
+
+    NSMutableArray *navigationHistory; /* 戻る用: 訪問済みURLのスタック */
 
     NSSplitView *splitView;
 

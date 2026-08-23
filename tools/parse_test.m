@@ -39,7 +39,9 @@ int main(int argc, const char *argv[]) {
         NSEnumerator *e = [[page headings] objectEnumerator];
         PWRHeading *h;
         while ((h = [e nextObject])) {
-            printf("H%d [pos %u] %s\n", [h level], [h bodyLocation], [[h title] UTF8String]);
+            NSURL *link = [h linkURL];
+            printf("H%d [pos %u] %s%s%s\n", [h level], [h bodyLocation], [[h title] UTF8String],
+                   link ? "  -> " : "", link ? [[link absoluteString] UTF8String] : "");
         }
     }
 
