@@ -17,12 +17,17 @@
     NSWindow *window;
 
     NSView *topBarView;
+    NSButton *addBookmarkButton;
     NSButton *backButton;
     NSTextField *urlField;
     NSButton *openButton;
     NSProgressIndicator *progressIndicator;
 
     NSMutableArray *navigationHistory; /* 戻る用: 訪問済みURLのスタック */
+
+    NSView *bookmarkBarView; /* ブックマークが1件も無い時は高さ0で隠れる */
+    NSMutableArray *bookmarks; /* {"title":..., "url":...}の配列。NSUserDefaultsで永続化 */
+    float bookmarkBarHeight;
 
     NSSplitView *splitView;
 

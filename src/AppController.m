@@ -53,6 +53,10 @@
 - (void)collapseRightPane;
 - (void)expandRightPane;
 - (void)rebuildHistoryMenu;
+- (void)loadBookmarks;
+- (void)saveBookmarks;
+- (void)rebuildBookmarkBarButtons;
+- (void)relayoutForBookmarkBarVisibility;
 @end
 
 @implementation AppController
@@ -65,17 +69,21 @@
     [currentBaseURL release];
     [currentStatusKey release];
     [navigationHistory release];
+    [bookmarks release];
     [window release];
     [super dealloc];
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
     rightPaneExpandedWidth = 260.0;
+    bookmarkBarHeight = 28.0;
     navigationHistory = [[NSMutableArray alloc] init];
+    [self loadBookmarks];
 
     [self buildMenuBar];
     [self buildWindow];
     [self rebuildHistoryMenu];
+    [self rebuildBookmarkBarButtons];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                               selector:@selector(languageDidChange:)
@@ -151,12 +159,14 @@
 }
 
 - (void)refreshLocalizedText {
+    [addBookmarkButton setTitle:PWRL(@"addBookmark")];
     [backButton setTitle:PWRL(@"back")];
     [openButton setTitle:PWRL(@"open")];
     [[headingColumn headerCell] setStringValue:PWRL(@"headings")];
     [quitMenuItem setTitle:PWRL(@"quit")];
     [languageMenuItem setTitle:PWRL(@"languageMenu")];
     [hideImageButton setTitle:PWRL(@"hideImage")];
+    [self rebuildBookmarkBarButtons]; /* 削除メニューの文言を言語切り替えに追従させる */
 
     [self updateLanguageCheckmarks];
 
@@ -190,8 +200,18 @@
 
     float buttonWidth = 90.0;
     float backButtonWidth = 70.0;
+    float addBookmarkWidth = 50.0;
 
-    NSRect backButtonFrame = NSMakeRect(8.0, 5.0, backButtonWidth, 26.0);
+    NSRect addBookmarkFrame = NSMakeRect(8.0, 5.0, addBookmarkWidth, 26.0);
+    addBookmarkButton = [[NSButton alloc] initWithFrame:addBookmarkFrame];
+    [addBookmarkButton setAutoresizingMask:NSViewMaxXMargin];
+    [addBookmarkButton setBezelStyle:NSRoundedBezelStyle];
+    [addBookmarkButton setTitle:PWRL(@"addBookmark")];
+    [addBookmarkButton setTarget:self];
+    [addBookmarkButton setAction:@selector(addBookmarkAction:)];
+    [topBarView addSubview:addBookmarkButton];
+
+    NSRect backButtonFrame = NSMakeRect(8.0 + addBookmarkWidth + 6.0, 5.0, backButtonWidth, 26.0);
     backButton = [[NSButton alloc] initWithFrame:backButtonFrame];
     [backButton setAutoresizingMask:NSViewMaxXMargin];
     [backButton setBezelStyle:NSRoundedBezelStyle];
@@ -201,7 +221,7 @@
     [backButton setEnabled:NO];
     [topBarView addSubview:backButton];
 
-    float urlFieldX = 8.0 + backButtonWidth + 8.0;
+    float urlFieldX = 8.0 + addBookmarkWidth + 6.0 + backButtonWidth + 8.0;
     float spinnerWidth = 20.0;
     NSRect urlFieldFrame = NSMakeRect(urlFieldX, 7.0,
                                        topBarFrame.size.width - urlFieldX - buttonWidth - spinnerWidth - 24.0, 22.0);
@@ -230,13 +250,25 @@
     [contentView addSubview:topBarView];
     [window setDefaultButtonCell:[openButton cell]];
     [topBarView release];
+    [addBookmarkButton release];
     [backButton release];
     [urlField release];
     [progressIndicator release];
     [openButton release];
 
+    /* --- ブックマークバー(アドレスバー直下、ブックマークが1件も無ければ高さ0) --- */
+    float shownBookmarkH = ([bookmarks count] > 0) ? bookmarkBarHeight : 0.0;
+    NSRect bookmarkBarFrame = NSMakeRect(0.0, contentBounds.size.height - topBarHeight - shownBookmarkH,
+                                          contentBounds.size.width, shownBookmarkH);
+    bookmarkBarView = [[NSView alloc] initWithFrame:bookmarkBarFrame];
+    [bookmarkBarView setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
+    [bookmarkBarView setHidden:(shownBookmarkH == 0.0)];
+    [contentView addSubview:bookmarkBarView];
+    [bookmarkBarView release];
+
     /* --- 3ペインsplit view(右ペインは既定で幅0=折りたたみ) --- */
-    NSRect splitFrame = NSMakeRect(0.0, 0.0, contentBounds.size.width, contentBounds.size.height - topBarHeight);
+    NSRect splitFrame = NSMakeRect(0.0, 0.0, contentBounds.size.width,
+                                    contentBounds.size.height - topBarHeight - shownBookmarkH);
     splitView = [[NSSplitView alloc] initWithFrame:splitFrame];
     [splitView setVertical:YES];
     [splitView setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
@@ -471,6 +503,139 @@
     }
     [backButton setMenu:menu];
     [menu release];
+}
+
+#pragma mark - ブックマーク
+
+- (void)loadBookmarks {
+    NSArray *saved = [[NSUserDefaults standardUserDefaults] arrayForKey:@"PWRBookmarks"];
+    if (saved) {
+        bookmarks = [saved mutableCopy];
+    } else {
+        bookmarks = [[NSMutableArray alloc] init];
+    }
+}
+
+- (void)saveBookmarks {
+    [[NSUserDefaults standardUserDefaults] setObject:bookmarks forKey:@"PWRBookmarks"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (void)addBookmarkAction:(id)sender {
+    if (!currentBaseURL) {
+        return;
+    }
+    NSString *urlString = [currentBaseURL absoluteString];
+
+    /* 同じURLが既に登録済みなら追加しない */
+    NSEnumerator *e = [bookmarks objectEnumerator];
+    NSDictionary *existing;
+    while ((existing = [e nextObject])) {
+        if ([[existing objectForKey:@"url"] isEqualToString:urlString]) {
+            return;
+        }
+    }
+
+    NSString *title = [currentPage pageTitle];
+    if ([title length] == 0) {
+        title = urlString;
+    }
+    NSDictionary *entry = [NSDictionary dictionaryWithObjectsAndKeys:
+        title, @"title", urlString, @"url", nil];
+    [bookmarks addObject:entry];
+    [self saveBookmarks];
+    [self rebuildBookmarkBarButtons];
+}
+
+- (void)bookmarkClicked:(id)sender {
+    int index = [sender tag];
+    if (index < 0 || (unsigned int)index >= [bookmarks count]) {
+        return;
+    }
+    NSDictionary *entry = [bookmarks objectAtIndex:index];
+    NSURL *url = [NSURL URLWithString:[entry objectForKey:@"url"]];
+    if (url) {
+        [self navigateToURL:url];
+    }
+}
+
+- (void)deleteBookmarkAction:(id)sender {
+    int index = [sender tag];
+    if (index < 0 || (unsigned int)index >= [bookmarks count]) {
+        return;
+    }
+    [bookmarks removeObjectAtIndex:index];
+    [self saveBookmarks];
+    [self rebuildBookmarkBarButtons];
+}
+
+/* ブックマークバーの中身をすべて作り直す。ブックマークの追加/削除/
+ * 言語切り替えの度に呼ばれる。 */
+- (void)rebuildBookmarkBarButtons {
+    NSArray *existingSubviews = [[bookmarkBarView subviews] copy];
+    NSEnumerator *se = [existingSubviews objectEnumerator];
+    NSView *v;
+    while ((v = [se nextObject])) {
+        [v removeFromSuperview];
+    }
+    [existingSubviews release];
+
+    float x = 6.0;
+    float buttonH = 20.0;
+    float buttonW = 100.0;
+    float y = (bookmarkBarHeight - buttonH) / 2.0;
+    int index = 0;
+
+    NSEnumerator *e = [bookmarks objectEnumerator];
+    NSDictionary *entry;
+    while ((entry = [e nextObject])) {
+        NSString *title = [entry objectForKey:@"title"];
+        NSButton *b = [[NSButton alloc] initWithFrame:NSMakeRect(x, y, buttonW, buttonH)];
+        [b setBezelStyle:NSRoundedBezelStyle];
+        [b setTitle:title];
+        [b setTarget:self];
+        [b setAction:@selector(bookmarkClicked:)];
+        [b setTag:index];
+
+        /* 右クリックで削除メニューを出す(戻る履歴メニューと同じ方式) */
+        NSMenu *contextMenu = [[NSMenu alloc] initWithTitle:@""];
+        NSMenuItem *deleteItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"deleteBookmark")
+                                                              action:@selector(deleteBookmarkAction:)
+                                                       keyEquivalent:@""];
+        [deleteItem setTarget:self];
+        [deleteItem setTag:index];
+        [contextMenu addItem:deleteItem];
+        [deleteItem release];
+        [b setMenu:contextMenu];
+        [contextMenu release];
+
+        [bookmarkBarView addSubview:b];
+        [b release];
+
+        x += buttonW + 6.0;
+        index++;
+    }
+
+    [self relayoutForBookmarkBarVisibility];
+}
+
+/* ブックマークの有無に応じてブックマークバー/split viewの高さを再計算する。
+ * ブックマークが1件も無ければバー自体を高さ0で隠す(折りたたみ式)。 */
+- (void)relayoutForBookmarkBarVisibility {
+    NSView *contentView = [window contentView];
+    NSRect contentBounds = [contentView bounds];
+    float topBarH = 36.0;
+    float shownH = ([bookmarks count] > 0) ? bookmarkBarHeight : 0.0;
+
+    NSRect bmFrame = NSMakeRect(0.0, contentBounds.size.height - topBarH - shownH,
+                                 contentBounds.size.width, shownH);
+    [bookmarkBarView setFrame:bmFrame];
+    [bookmarkBarView setHidden:(shownH == 0.0)];
+
+    NSRect spFrame = NSMakeRect(0.0, 0.0, contentBounds.size.width,
+                                 contentBounds.size.height - topBarH - shownH);
+    [splitView setFrame:spFrame];
+    [splitView adjustSubviews];
 }
 
 /* 履歴には積まずにページを読み込む(戻る操作専用の下位メソッド) */

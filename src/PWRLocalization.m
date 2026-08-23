@@ -17,6 +17,8 @@ static NSDictionary *gEnStrings = nil;
     gJaStrings = [[NSDictionary alloc] initWithObjectsAndKeys:
         PWRJPStr("開く"), @"open",
         PWRJPStr("戻る"), @"back",
+        PWRJPStr("追加"), @"addBookmark",
+        PWRJPStr("削除"), @"deleteBookmark",
         PWRJPStr("見出し"), @"headings",
         PWRJPStr("読み込み中..."), @"loading",
         PWRJPStr("準備完了"), @"ready",
@@ -33,6 +35,8 @@ static NSDictionary *gEnStrings = nil;
     gEnStrings = [[NSDictionary alloc] initWithObjectsAndKeys:
         @"Open", @"open",
         @"Back", @"back",
+        @"Add", @"addBookmark",
+        @"Delete", @"deleteBookmark",
         @"Headings", @"headings",
         @"Loading...", @"loading",
         @"Ready", @"ready",
