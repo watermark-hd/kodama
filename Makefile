@@ -21,7 +21,10 @@ OBJECTS = $(SOURCES:.m=.o)
 PARSER_TEST_BIN = $(BUILD_DIR)/parse-test
 PARSER_SOURCES  = src/HTMLParserEngine.m tools/parse_test.m
 
-.PHONY: all app run clean check-libxml2 test-parser
+CURL_TEST_BIN     = $(BUILD_DIR)/curl-test
+CURL_TEST_SOURCES = src/CurlTaskRunner.m tools/curl_test.m
+
+.PHONY: all app run clean check-libxml2 test-parser test-curl
 
 all: app
 
@@ -59,3 +62,13 @@ test-parser: $(PARSER_TEST_BIN)
 $(PARSER_TEST_BIN): $(PARSER_SOURCES) src/HTMLParserEngine.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I/usr/include/libxml2 $(PARSER_SOURCES) -lxml2 $(LDFLAGS) -o $@
+
+# Phase 2: CurlTaskRunnerをGUI無しで単体テスト(実際にHTTPSサイトを取得する)
+# 例: make test-curl URL=https://example.com
+test-curl: $(CURL_TEST_BIN)
+	@if [ -z "$(URL)" ]; then echo "URLを指定してください 例: make test-curl URL=https://example.com"; exit 1; fi
+	$(CURL_TEST_BIN) $(URL)
+
+$(CURL_TEST_BIN): $(CURL_TEST_SOURCES) src/CurlTaskRunner.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(CURL_TEST_SOURCES) $(LDFLAGS) -o $@
