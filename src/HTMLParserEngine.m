@@ -254,6 +254,36 @@ static void PWREnsureSeparation(PWRWalkContext *ctx) {
     }
 }
 
+/* class/id名にナビゲーション由来と分かる特徴的な語を含む要素を除外する。
+ * <nav>タグを使わずdivでメニューを組んでいるサイト(FNN等)向けの対策。
+ * "nav"や"header"のような一般的すぎる語は記事本文側のクラス名(例:
+ * article-header)を誤って除外してしまう恐れがあるため避け、
+ * 実サイトで確認できた"gnav"のような誤検知の少ない語に絞っている。 */
+static BOOL PWRHasNavigationLikeClass(xmlNode *node) {
+    static const char *keywords[] = {
+        "gnav", "globalnav", "global-nav", "breadcrumb", "pankuzu", "drawer", "hamburger"
+    };
+    static const int keywordCount = 7;
+    static const char *attrNames[] = {"class", "id"};
+    static const int attrCount = 2;
+    int a, k;
+
+    for (a = 0; a < attrCount; a++) {
+        xmlChar *val = xmlGetProp(node, (const xmlChar *)attrNames[a]);
+        if (!val) {
+            continue;
+        }
+        for (k = 0; k < keywordCount; k++) {
+            if (strcasestr((const char *)val, keywords[k])) {
+                xmlFree(val);
+                return YES;
+            }
+        }
+        xmlFree(val);
+    }
+    return NO;
+}
+
 static xmlNode *PWRFindNodeByName(xmlNode *node, const char *name) {
     xmlNode *cur;
     for (cur = node; cur; cur = cur->next) {
@@ -360,6 +390,9 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
         xmlStrcasecmp(name, (const xmlChar *)"iframe") == 0 ||
         xmlStrcasecmp(name, (const xmlChar *)"nav") == 0 ||
         xmlStrcasecmp(name, (const xmlChar *)"footer") == 0) {
+        return;
+    }
+    if (PWRHasNavigationLikeClass(node)) {
         return;
     }
 
