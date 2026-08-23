@@ -27,6 +27,8 @@
 
     NSView *bookmarkBarView; /* ブックマークが1件も無い時は高さ0で隠れる */
     NSMutableArray *bookmarks; /* {"title":..., "url":...}の配列。NSUserDefaultsで永続化 */
+    NSMutableArray *bookmarkDeleteButtons; /* 各ブックマークの×ボタン(ホバー時のみ表示) */
+    NSMutableArray *bookmarkTrackingTags; /* addTrackingRect:のタグ。再構築時に確実に解除するため保持 */
     float bookmarkBarHeight;
 
     NSSplitView *splitView;

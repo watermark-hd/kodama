@@ -70,6 +70,8 @@
     [currentStatusKey release];
     [navigationHistory release];
     [bookmarks release];
+    [bookmarkDeleteButtons release];
+    [bookmarkTrackingTags release];
     [window release];
     [super dealloc];
 }
@@ -79,6 +81,8 @@
     bookmarkBarHeight = 28.0;
     navigationHistory = [[NSMutableArray alloc] init];
     [self loadBookmarks];
+    bookmarkDeleteButtons = [[NSMutableArray alloc] init];
+    bookmarkTrackingTags = [[NSMutableArray alloc] init];
 
     [self buildMenuBar];
     [self buildWindow];
@@ -604,6 +608,16 @@
 /* ブックマークバーの中身をすべて作り直す。ブックマークの追加/削除/
  * 言語切り替えの度に呼ばれる。 */
 - (void)rebuildBookmarkBarButtons {
+    /* 古いトラッキング矩形を必ず解除してから作り直す。bookmarkBarView自体は
+     * 再構築の度に作り直されるわけではないので、放置すると溜まっていく */
+    NSEnumerator *te = [bookmarkTrackingTags objectEnumerator];
+    NSNumber *tagNum;
+    while ((tagNum = [te nextObject])) {
+        [bookmarkBarView removeTrackingRect:[tagNum intValue]];
+    }
+    [bookmarkTrackingTags removeAllObjects];
+    [bookmarkDeleteButtons removeAllObjects];
+
     NSArray *existingSubviews = [[bookmarkBarView subviews] copy];
     NSEnumerator *se = [existingSubviews objectEnumerator];
     NSView *v;
@@ -614,7 +628,8 @@
 
     float x = 6.0;
     float buttonH = 20.0;
-    float buttonW = 100.0;
+    float chipW = 100.0;
+    float deleteButtonW = 18.0;
     float y = (bookmarkBarHeight - buttonH) / 2.0;
     int index = 0;
 
@@ -622,14 +637,14 @@
     NSDictionary *entry;
     while ((entry = [e nextObject])) {
         NSString *title = [entry objectForKey:@"title"];
-        NSButton *b = [[NSButton alloc] initWithFrame:NSMakeRect(x, y, buttonW, buttonH)];
+        NSButton *b = [[NSButton alloc] initWithFrame:NSMakeRect(x, y, chipW, buttonH)];
         [b setBezelStyle:NSRoundedBezelStyle];
         [b setTitle:title];
         [b setTarget:self];
         [b setAction:@selector(bookmarkClicked:)];
         [b setTag:index];
 
-        /* 右クリックで削除メニューを出す(戻る履歴メニューと同じ方式) */
+        /* 右クリック(control+クリック)でも削除メニューを出せるようにしておく */
         NSMenu *contextMenu = [[NSMenu alloc] initWithTitle:@""];
         NSMenuItem *deleteItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"deleteBookmark")
                                                               action:@selector(deleteBookmarkAction:)
@@ -644,11 +659,47 @@
         [bookmarkBarView addSubview:b];
         [b release];
 
-        x += buttonW + 6.0;
+        /* ×削除ボタンはマウスを乗せた時だけ現れる(常時表示だと数が増えた時
+         * 邪魔になるという指摘を受けての対応)。ボタン本体の右端に重ねて置く */
+        NSRect deleteFrame = NSMakeRect(x + chipW - deleteButtonW - 2.0, y + 1.0,
+                                         deleteButtonW, buttonH - 2.0);
+        NSButton *deleteButton = [[NSButton alloc] initWithFrame:deleteFrame];
+        [deleteButton setBezelStyle:NSSmallSquareBezelStyle];
+        [deleteButton setTitle:PWRJPStr("×")];
+        [deleteButton setTarget:self];
+        [deleteButton setAction:@selector(deleteBookmarkAction:)];
+        [deleteButton setTag:index];
+        [deleteButton setHidden:YES];
+        [bookmarkBarView addSubview:deleteButton];
+        [bookmarkDeleteButtons addObject:deleteButton];
+        [deleteButton release];
+
+        NSRect trackingFrame = NSMakeRect(x, y, chipW, buttonH);
+        NSTrackingRectTag tag = [bookmarkBarView addTrackingRect:trackingFrame
+                                                             owner:self
+                                                          userData:(void *)(long)index
+                                                      assumeInside:NO];
+        [bookmarkTrackingTags addObject:[NSNumber numberWithInt:tag]];
+
+        x += chipW + 6.0;
         index++;
     }
 
     [self relayoutForBookmarkBarVisibility];
+}
+
+- (void)mouseEntered:(NSEvent *)event {
+    int index = (int)(long)[event userData];
+    if (index >= 0 && index < (int)[bookmarkDeleteButtons count]) {
+        [[bookmarkDeleteButtons objectAtIndex:index] setHidden:NO];
+    }
+}
+
+- (void)mouseExited:(NSEvent *)event {
+    int index = (int)(long)[event userData];
+    if (index >= 0 && index < (int)[bookmarkDeleteButtons count]) {
+        [[bookmarkDeleteButtons objectAtIndex:index] setHidden:YES];
+    }
 }
 
 /* ブックマークの有無に応じてブックマークバー/split viewの高さを再計算する。
