@@ -8,6 +8,8 @@
 	<string>PPC-WebReader</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.tomo820.ppcwebreader</string>
+	<key>CFBundleIconFile</key>
+	<string>PPC-WebReader.icns</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleSignature</key>

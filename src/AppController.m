@@ -52,8 +52,12 @@
 - (void)buildMenuBar {
     NSMenu *menubar = [[NSMenu alloc] initWithTitle:@""];
 
-    /* アプリケーションメニュー(先頭の無題アイテム) */
-    NSMenuItem *appMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:NULL keyEquivalent:@""];
+    /* アプリケーションメニュー(先頭のアイテム)。
+     * Cocoaは表示上ここに実行中のアプリ名を自動で出すが、それは描画時の
+     * 差し替えに過ぎず、クリック判定領域の幅はtitleプロパティの実際の
+     * 文字列長から計算される。空文字列のままだと表示(広い)と判定領域
+     * (ほぼ0幅)がずれてクリックできなくなるため、実際のアプリ名を設定する。 */
+    NSMenuItem *appMenuItem = [[NSMenuItem alloc] initWithTitle:@"PPC-WebReader" action:NULL keyEquivalent:@""];
     [menubar addItem:appMenuItem];
 
     NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@""];

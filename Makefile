@@ -7,6 +7,7 @@ BUILD_DIR  = build
 APP_BUNDLE = $(BUILD_DIR)/$(APP_NAME).app
 CONTENTS   = $(APP_BUNDLE)/Contents
 MACOS_DIR  = $(CONTENTS)/MacOS
+RES_DIR    = $(CONTENTS)/Resources
 
 CC      ?= gcc
 # G4実機(Tiger)上でネイティブビルドするため、デプロイターゲット指定は不要
@@ -29,7 +30,7 @@ CURL_TEST_SOURCES = src/CurlTaskRunner.m src/PWRLocalization.m tools/curl_test.m
 
 all: app
 
-app: $(MACOS_DIR)/$(APP_NAME) $(CONTENTS)/Info.plist
+app: $(MACOS_DIR)/$(APP_NAME) $(CONTENTS)/Info.plist $(RES_DIR)/PPC-WebReader.icns
 
 $(MACOS_DIR)/$(APP_NAME): $(OBJECTS)
 	@mkdir -p $(MACOS_DIR)
@@ -37,6 +38,10 @@ $(MACOS_DIR)/$(APP_NAME): $(OBJECTS)
 
 $(CONTENTS)/Info.plist: Resources/Info.plist
 	@mkdir -p $(CONTENTS)
+	cp $< $@
+
+$(RES_DIR)/PPC-WebReader.icns: Resources/PPC-WebReader.icns
+	@mkdir -p $(RES_DIR)
 	cp $< $@
 
 %.o: %.m
