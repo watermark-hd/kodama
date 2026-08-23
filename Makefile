@@ -9,7 +9,9 @@ CONTENTS   = $(APP_BUNDLE)/Contents
 MACOS_DIR  = $(CONTENTS)/MacOS
 
 CC      ?= gcc
-CFLAGS  = -Wall -mmacosx-version-min=10.4 -Isrc
+# G4実機(Tiger)上でネイティブビルドするため、デプロイターゲット指定は不要
+# (このgcc 4.0.0はcc1objで-mmacosx-version-minを受け付けない)
+CFLAGS  = -Wall -Isrc
 LDFLAGS = -framework Cocoa
 
 SRC_DIR = src
