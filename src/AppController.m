@@ -117,6 +117,38 @@
     [appMenu release];
     [appMenuItem release];
 
+    /* 編集メニュー。target=nilで作ることで「今フォーカスしている
+     * 入力欄」に自動的にコマンドが飛ぶ(標準的なCocoaの作法)。
+     * これが無いとCmd+V等の編集ショートカットがURL欄で効かない。 */
+    NSMenuItem *editMenuItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"editMenu") action:NULL keyEquivalent:@""];
+    [menubar addItem:editMenuItem];
+
+    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:PWRL(@"editMenu")];
+    NSMenuItem *undoItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"undo") action:@selector(undo:) keyEquivalent:@"z"];
+    [editMenu addItem:undoItem];
+    [undoItem release];
+    NSMenuItem *redoItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"redo") action:@selector(redo:) keyEquivalent:@"Z"];
+    [redoItem setKeyEquivalentModifierMask:(NSCommandKeyMask | NSShiftKeyMask)];
+    [editMenu addItem:redoItem];
+    [redoItem release];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *cutItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"cut") action:@selector(cut:) keyEquivalent:@"x"];
+    [editMenu addItem:cutItem];
+    [cutItem release];
+    NSMenuItem *copyItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"copy") action:@selector(copy:) keyEquivalent:@"c"];
+    [editMenu addItem:copyItem];
+    [copyItem release];
+    NSMenuItem *pasteItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"paste") action:@selector(paste:) keyEquivalent:@"v"];
+    [editMenu addItem:pasteItem];
+    [pasteItem release];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *selectAllItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"selectAll") action:@selector(selectAll:) keyEquivalent:@"a"];
+    [editMenu addItem:selectAllItem];
+    [selectAllItem release];
+    [editMenuItem setSubmenu:editMenu];
+    [editMenu release];
+    [editMenuItem release];
+
     /* 言語メニュー */
     languageMenuItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"languageMenu") action:NULL keyEquivalent:@""];
     [menubar addItem:languageMenuItem];

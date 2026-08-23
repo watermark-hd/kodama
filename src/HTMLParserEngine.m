@@ -5,6 +5,45 @@
 #include <libxml/xmlstring.h>
 #include <string.h>
 
+#pragma mark - 文字エンコーディング検出
+
+/* HTMLの先頭付近からmeta charsetの宣言を素朴に読み取る。
+ * このlibxml2(2.6.16)はエンコーディング自動検出が不安定で、
+ * Shift_JIS宣言のページ(ITmedia等)で文字化けすることを実機で
+ * 確認したため、検出できた場合は明示的にhtmlReadMemoryへ
+ * エンコーディング名を渡すようにする。 */
+static NSString *PWRDetectCharset(NSData *htmlData) {
+    unsigned int scanLen = [htmlData length] < 4096 ? [htmlData length] : 4096;
+    NSMutableData *working = [NSMutableData dataWithBytes:[htmlData bytes] length:scanLen];
+    [working appendBytes:"\0" length:1];
+    const char *base = (const char *)[working bytes];
+
+    const char *marker = strcasestr(base, "charset=");
+    if (!marker) {
+        return nil;
+    }
+    marker += strlen("charset=");
+
+    while (*marker == '"' || *marker == '\'' || *marker == ' ') {
+        marker++;
+    }
+
+    char buf[64];
+    unsigned int i = 0;
+    while (i < sizeof(buf) - 1 && marker[i] &&
+           marker[i] != '"' && marker[i] != '\'' && marker[i] != ' ' &&
+           marker[i] != ';' && marker[i] != '>' && marker[i] != '\n' && marker[i] != '\r') {
+        buf[i] = marker[i];
+        i++;
+    }
+    buf[i] = '\0';
+
+    if (i == 0) {
+        return nil;
+    }
+    return [NSString stringWithUTF8String:buf];
+}
+
 #pragma mark - script/styleの生テキスト除去(libxml2に渡す前の前処理)
 
 /* このlibxml2(2.6.16)のHTMLパーサーは、<script>の中身をHTML5仕様通りの
@@ -543,11 +582,13 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
     }
 
     NSData *cleanedData = PWRStripRawTextBlocks(htmlData);
+    NSString *charset = PWRDetectCharset(htmlData);
+    const char *encodingCString = charset ? [charset UTF8String] : NULL;
 
     const char *urlCString = baseURL ? [[baseURL absoluteString] UTF8String] : NULL;
     /* このlibxml2(2.6.16, Tiger標準)にはHTML_PARSE_RECOVERが存在しない。
      * HTMLパーサーはデフォルトで壊れたHTMLを寛容に読むため無くても問題ない */
-    htmlDocPtr doc = htmlReadMemory([cleanedData bytes], [cleanedData length], urlCString, NULL,
+    htmlDocPtr doc = htmlReadMemory([cleanedData bytes], [cleanedData length], urlCString, encodingCString,
                                      HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING | HTML_PARSE_NONET);
     if (!doc) {
         return nil;
