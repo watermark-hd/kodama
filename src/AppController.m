@@ -2,6 +2,15 @@
 #import "PWRCompat.h"
 #import "PWRLocalization.h"
 
+/* -setAppleMenu:は公開ヘッダには無いが実在する古典的なNSApplicationの
+ * セレクタ(nib無しでメニューバーを組む際の定番)。これを呼んで自分の
+ * appMenuを「本物のアプリケーションメニュー」として登録しないと、
+ * AppKitが独自にもう一つアプリケーションメニューを生成してしまい、
+ * 同じ名前のメニューが2つ並ぶ不具合が起きることを実機で確認した。 */
+@interface NSApplication (PWRPrivateAppleMenu)
+- (void)setAppleMenu:(NSMenu *)menu;
+@end
+
 /* 戻る履歴1件分(URL+当時のページタイトル)。
  * 「戻る」ボタンを右クリックした時の履歴一覧メニュー表示に使う。 */
 @interface PWRHistoryEntry : NSObject
@@ -116,14 +125,19 @@
      * 差し替えに過ぎず、クリック判定領域の幅はtitleプロパティの実際の
      * 文字列長から計算される。空文字列のままだと表示(広い)と判定領域
      * (ほぼ0幅)がずれてクリックできなくなるため、実際のアプリ名を設定する。 */
-    NSMenuItem *appMenuItem = [[NSMenuItem alloc] initWithTitle:@"Kodama" action:NULL keyEquivalent:@""];
+    NSMenuItem *appMenuItem = [[NSMenuItem alloc] initWithTitle:PWRJPStr("コダマ") action:NULL keyEquivalent:@""];
     [menubar addItem:appMenuItem];
 
-    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@""];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:PWRJPStr("コダマ")];
+    aboutMenuItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"about") action:@selector(aboutAction:) keyEquivalent:@""];
+    [aboutMenuItem setTarget:self];
+    [appMenu addItem:aboutMenuItem];
+    [appMenu addItem:[NSMenuItem separatorItem]];
     quitMenuItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"quit") action:@selector(terminate:) keyEquivalent:@"q"];
     [quitMenuItem setTarget:NSApp];
     [appMenu addItem:quitMenuItem];
     [appMenuItem setSubmenu:appMenu];
+    [NSApp setAppleMenu:appMenu];
     [appMenu release];
     [appMenuItem release];
 
@@ -188,6 +202,32 @@
     [englishMenuItem setState:(isJapanese ? NSOffState : NSOnState)];
 }
 
+- (void)aboutAction:(id)sender {
+    NSMutableDictionary *options = [NSMutableDictionary dictionary];
+    [options setObject:PWRJPStr("コダマ (Kodama)") forKey:@"ApplicationName"];
+    [options setObject:@"0.1" forKey:@"ApplicationVersion"];
+
+    /* PPC Mac利用者は国内より海外の方が多いと見込み、Aboutパネルの説明文は
+     * 常に日英併記にする(UI言語設定とは独立) */
+    NSString *creditsText = PWRJPStr(
+        "PowerPC Mac (G3/G4/G5) 向け超軽量3ペインWebリーダー\n"
+        "A lightweight 3-pane web reader for PowerPC Macs (G3/G4/G5)\n\n"
+        "https://github.com/watermark-hd/kodama");
+
+    NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
+    [style setAlignment:NSCenterTextAlignment];
+    NSMutableDictionary *creditsAttrs = [NSMutableDictionary dictionary];
+    [creditsAttrs setObject:[NSFont systemFontOfSize:11.0] forKey:NSFontAttributeName];
+    [creditsAttrs setObject:style forKey:NSParagraphStyleAttributeName];
+    [style release];
+
+    NSAttributedString *credits = [[NSAttributedString alloc] initWithString:creditsText attributes:creditsAttrs];
+    [options setObject:credits forKey:@"Credits"];
+    [credits release];
+
+    [NSApp orderFrontStandardAboutPanelWithOptions:options];
+}
+
 - (void)selectJapanese:(id)sender {
     [PWRLocalization setLanguage:@"ja"];
 }
@@ -205,6 +245,7 @@
     [backButton setTitle:PWRL(@"back")];
     [forwardButton setTitle:PWRL(@"forward")];
     [[headingColumn headerCell] setStringValue:PWRL(@"headings")];
+    [aboutMenuItem setTitle:PWRL(@"about")];
     [quitMenuItem setTitle:PWRL(@"quit")];
     [languageMenuItem setTitle:PWRL(@"languageMenu")];
     [hideImageButton setTitle:PWRL(@"hideImage")];

@@ -49,6 +49,7 @@
     NSScrollView *rightScrollView;
     NSImageView *imageView;
 
+    NSMenuItem *aboutMenuItem;
     NSMenuItem *quitMenuItem;
     NSMenuItem *languageMenuItem;
     NSMenuItem *japaneseMenuItem;
