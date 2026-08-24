@@ -56,6 +56,8 @@
 - (void)loadBookmarks;
 - (void)saveBookmarks;
 - (void)rebuildBookmarkBarButtons;
+- (void)clearBookmarkChips;
+- (void)updateBookmarkToggleTitle;
 - (void)relayoutForBookmarkBarVisibility;
 @end
 
@@ -79,7 +81,9 @@
 
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
     rightPaneExpandedWidth = 260.0;
-    bookmarkBarHeight = 28.0;
+    bookmarkBarHeight = 20.0;
+    bookmarkToggleStripHeight = 13.0;
+    bookmarkBarExpanded = NO;
     navigationHistory = [[NSMutableArray alloc] init];
     forwardHistory = [[NSMutableArray alloc] init];
     [self loadBookmarks];
@@ -204,6 +208,7 @@
     [quitMenuItem setTitle:PWRL(@"quit")];
     [languageMenuItem setTitle:PWRL(@"languageMenu")];
     [hideImageButton setTitle:PWRL(@"hideImage")];
+    [self updateBookmarkToggleTitle];
     [self rebuildBookmarkBarButtons]; /* 削除メニューの文言を言語切り替えに追従させる */
 
     [self updateLanguageCheckmarks];
@@ -297,19 +302,34 @@
     [addBookmarkButton release];
     [progressIndicator release];
 
-    /* --- ブックマークバー(アドレスバー直下、ブックマークが1件も無ければ高さ0) --- */
-    float shownBookmarkH = ([bookmarks count] > 0) ? bookmarkBarHeight : 0.0;
-    NSRect bookmarkBarFrame = NSMakeRect(0.0, contentBounds.size.height - topBarHeight - shownBookmarkH,
-                                          contentBounds.size.width, shownBookmarkH);
+    /* --- ブックマークバー ---
+     * 「▼ブックマーク」の細い帯は常時表示し、押した時だけ実際の
+     * ブックマーク行が下に現れる折りたたみ式。画面が狭いG4等(1024x768)
+     * でもメイン領域を広く保てるように、既定では畳んだ状態にしている。 */
+    float initialTotalH = bookmarkToggleStripHeight;
+    NSRect bookmarkBarFrame = NSMakeRect(0.0, contentBounds.size.height - topBarHeight - initialTotalH,
+                                          contentBounds.size.width, initialTotalH);
     bookmarkBarView = [[NSView alloc] initWithFrame:bookmarkBarFrame];
     [bookmarkBarView setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
-    [bookmarkBarView setHidden:(shownBookmarkH == 0.0)];
     [contentView addSubview:bookmarkBarView];
+
+    NSRect toggleFrame = NSMakeRect(0.0, initialTotalH - bookmarkToggleStripHeight,
+                                     contentBounds.size.width, bookmarkToggleStripHeight);
+    bookmarkToggleButton = [[NSButton alloc] initWithFrame:toggleFrame];
+    [bookmarkToggleButton setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
+    [bookmarkToggleButton setBordered:NO];
+    [[bookmarkToggleButton cell] setAlignment:NSCenterTextAlignment];
+    [bookmarkToggleButton setTarget:self];
+    [bookmarkToggleButton setAction:@selector(toggleBookmarkBarAction:)];
+    [bookmarkBarView addSubview:bookmarkToggleButton];
+    [bookmarkToggleButton release];
+    [self updateBookmarkToggleTitle];
+
     [bookmarkBarView release];
 
     /* --- 3ペインsplit view(右ペインは既定で幅0=折りたたみ) --- */
     NSRect splitFrame = NSMakeRect(0.0, 0.0, contentBounds.size.width,
-                                    contentBounds.size.height - topBarHeight - shownBookmarkH);
+                                    contentBounds.size.height - topBarHeight - initialTotalH);
     splitView = [[NSSplitView alloc] initWithFrame:splitFrame];
     [splitView setVertical:YES];
     [splitView setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
@@ -663,6 +683,82 @@
     }
 }
 
+/* NSAlertにはaccessoryViewが無い(Leopard以降のAPI)ため、
+ * テキスト入力欄付きの小さなモーダルパネルを自前で組む */
+- (void)renameBookmarkAction:(id)sender {
+    int index = [sender tag];
+    if (index < 0 || (unsigned int)index >= [bookmarks count]) {
+        return;
+    }
+    NSDictionary *entry = [bookmarks objectAtIndex:index];
+    NSString *currentTitle = [entry objectForKey:@"title"];
+
+    NSPanel *panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0.0, 0.0, 320.0, 110.0)
+                                                  styleMask:NSTitledWindowMask
+                                                    backing:NSBackingStoreBuffered
+                                                      defer:NO];
+    [panel setTitle:PWRL(@"renameBookmark")];
+
+    NSTextField *label = [[NSTextField alloc] initWithFrame:NSMakeRect(16.0, 78.0, 288.0, 17.0)];
+    [label setStringValue:PWRL(@"renameBookmarkPrompt")];
+    [label setEditable:NO];
+    [label setSelectable:NO];
+    [label setBezeled:NO];
+    [label setDrawsBackground:NO];
+    [[panel contentView] addSubview:label];
+    [label release];
+
+    NSTextField *field = [[NSTextField alloc] initWithFrame:NSMakeRect(16.0, 50.0, 288.0, 22.0)];
+    [field setStringValue:(currentTitle ? currentTitle : @"")];
+    [[panel contentView] addSubview:field];
+    [field release];
+
+    NSButton *cancelButton = [[NSButton alloc] initWithFrame:NSMakeRect(140.0, 12.0, 80.0, 26.0)];
+    [cancelButton setBezelStyle:NSRoundedBezelStyle];
+    [cancelButton setTitle:PWRL(@"cancel")];
+    [cancelButton setTarget:self];
+    [cancelButton setAction:@selector(renameCancelAction:)];
+    [[panel contentView] addSubview:cancelButton];
+    [cancelButton release];
+
+    NSButton *okButton = [[NSButton alloc] initWithFrame:NSMakeRect(224.0, 12.0, 80.0, 26.0)];
+    [okButton setBezelStyle:NSRoundedBezelStyle];
+    [okButton setTitle:PWRL(@"ok")];
+    [okButton setTarget:self];
+    [okButton setAction:@selector(renameOKAction:)];
+    [[panel contentView] addSubview:okButton];
+    [panel setDefaultButtonCell:[okButton cell]];
+    [okButton release];
+
+    [panel makeFirstResponder:field];
+    [field selectText:nil];
+
+    int result = [NSApp runModalForWindow:panel];
+    [panel orderOut:nil];
+
+    if (result == 1) {
+        NSString *newTitle = [[field stringValue]
+            stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if ([newTitle length] > 0) {
+            NSMutableDictionary *updated = [NSMutableDictionary dictionaryWithDictionary:entry];
+            [updated setObject:newTitle forKey:@"title"];
+            [bookmarks replaceObjectAtIndex:index withObject:updated];
+            [self saveBookmarks];
+            [self rebuildBookmarkBarButtons];
+        }
+    }
+
+    [panel release];
+}
+
+- (void)renameOKAction:(id)sender {
+    [NSApp stopModalWithCode:1];
+}
+
+- (void)renameCancelAction:(id)sender {
+    [NSApp stopModalWithCode:0];
+}
+
 - (void)deleteBookmarkAction:(id)sender {
     int index = [sender tag];
     if (index < 0 || (unsigned int)index >= [bookmarks count]) {
@@ -675,9 +771,9 @@
 
 /* ブックマークバーの中身をすべて作り直す。ブックマークの追加/削除/
  * 言語切り替えの度に呼ばれる。 */
-- (void)rebuildBookmarkBarButtons {
-    /* 古いトラッキング矩形を必ず解除してから作り直す。bookmarkBarView自体は
-     * 再構築の度に作り直されるわけではないので、放置すると溜まっていく */
+/* ブックマーク行の中身(チップ・×ボタン・トラッキング矩形)だけを片付ける。
+ * 常時表示のbookmarkToggleButtonはここでは触らない。 */
+- (void)clearBookmarkChips {
     NSEnumerator *te = [bookmarkTrackingTags objectEnumerator];
     NSNumber *tagNum;
     while ((tagNum = [te nextObject])) {
@@ -690,17 +786,59 @@
     NSEnumerator *se = [existingSubviews objectEnumerator];
     NSView *v;
     while ((v = [se nextObject])) {
-        [v removeFromSuperview];
+        if (v != bookmarkToggleButton) {
+            [v removeFromSuperview];
+        }
     }
     [existingSubviews release];
+}
+
+- (void)toggleBookmarkBarAction:(id)sender {
+    bookmarkBarExpanded = !bookmarkBarExpanded;
+    [self updateBookmarkToggleTitle];
+    [self rebuildBookmarkBarButtons];
+}
+
+- (void)updateBookmarkToggleTitle {
+    NSString *arrow = bookmarkBarExpanded ? PWRJPStr("▲") : PWRJPStr("▼");
+    NSString *label = [NSString stringWithFormat:@"%@ %@", arrow, PWRL(@"bookmarksToggle")];
+
+    /* [cell setAlignment:]だけだとattributedTitle使用時に反映されない
+     * ことがあるため、段落スタイルとして直接中央揃えを埋め込む */
+    NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
+    [style setAlignment:NSCenterTextAlignment];
+
+    NSMutableDictionary *attrs = [NSMutableDictionary dictionary];
+    [attrs setObject:[NSColor grayColor] forKey:NSForegroundColorAttributeName];
+    [attrs setObject:[NSFont systemFontOfSize:9.0] forKey:NSFontAttributeName];
+    [attrs setObject:style forKey:NSParagraphStyleAttributeName];
+    /* 細い帯の中で文字がやや下に寄って見えるとの指摘を受け、
+     * ベースラインを少し持ち上げて視覚的に中央へ近づける */
+    [attrs setObject:[NSNumber numberWithFloat:1.5] forKey:NSBaselineOffsetAttributeName];
+    [style release];
+
+    NSAttributedString *attrTitle = [[NSAttributedString alloc] initWithString:label attributes:attrs];
+    [bookmarkToggleButton setAttributedTitle:attrTitle];
+    [attrTitle release];
+}
+
+/* ブックマーク行(チップ)を組み立てる。折りたたみ中(bookmarkBarExpanded==NO)
+ * は「▼ブックマーク」の帯だけ残してチップは作らない。 */
+- (void)rebuildBookmarkBarButtons {
+    [self clearBookmarkChips];
+
+    if (!bookmarkBarExpanded) {
+        [self relayoutForBookmarkBarVisibility];
+        return;
+    }
 
     float x = 6.0;
-    float buttonH = 18.0;
+    float buttonH = 15.0;
     float maxChipW = 140.0;
     float deleteButtonW = 16.0;
     float y = (bookmarkBarHeight - buttonH) / 2.0;
     int index = 0;
-    NSFont *bookmarkFont = [NSFont systemFontOfSize:11.0];
+    NSFont *bookmarkFont = [NSFont systemFontOfSize:10.0];
 
     NSEnumerator *e = [bookmarks objectEnumerator];
     NSDictionary *entry;
@@ -729,8 +867,15 @@
         }
         [b setFrame:NSMakeRect(x, y, chipW, buttonH)];
 
-        /* 右クリック(control+クリック)でも削除メニューを出せるようにしておく */
+        /* 右クリック(control+クリック)で名前変更・削除のメニューを出す */
         NSMenu *contextMenu = [[NSMenu alloc] initWithTitle:@""];
+        NSMenuItem *renameItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"renameBookmark")
+                                                              action:@selector(renameBookmarkAction:)
+                                                       keyEquivalent:@""];
+        [renameItem setTarget:self];
+        [renameItem setTag:index];
+        [contextMenu addItem:renameItem];
+        [renameItem release];
         NSMenuItem *deleteItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"deleteBookmark")
                                                               action:@selector(deleteBookmarkAction:)
                                                        keyEquivalent:@""];
@@ -785,23 +930,33 @@
     }
 }
 
-/* ブックマークの有無に応じてブックマークバー/split viewの高さを再計算する。
- * ブックマークが1件も無ければバー自体を高さ0で隠す(折りたたみ式)。 */
+/* 「▼ブックマーク」の帯は常時表示、展開時だけブックマーク行の分の高さを足す。
+ * トグルボタン自身の位置も、コンテナの高さが変わるたびに天井(一番上)に
+ * 来るよう再計算する。 */
 - (void)relayoutForBookmarkBarVisibility {
     NSView *contentView = [window contentView];
     NSRect contentBounds = [contentView bounds];
     float topBarH = 36.0;
-    float shownH = ([bookmarks count] > 0) ? bookmarkBarHeight : 0.0;
+    float totalH = bookmarkToggleStripHeight + (bookmarkBarExpanded ? bookmarkBarHeight : 0.0);
 
-    NSRect bmFrame = NSMakeRect(0.0, contentBounds.size.height - topBarH - shownH,
-                                 contentBounds.size.width, shownH);
+    NSRect bmFrame = NSMakeRect(0.0, contentBounds.size.height - topBarH - totalH,
+                                 contentBounds.size.width, totalH);
     [bookmarkBarView setFrame:bmFrame];
-    [bookmarkBarView setHidden:(shownH == 0.0)];
+
+    NSRect toggleFrame = NSMakeRect(0.0, totalH - bookmarkToggleStripHeight,
+                                     contentBounds.size.width, bookmarkToggleStripHeight);
+    [bookmarkToggleButton setFrame:toggleFrame];
 
     NSRect spFrame = NSMakeRect(0.0, 0.0, contentBounds.size.width,
-                                 contentBounds.size.height - topBarH - shownH);
+                                 contentBounds.size.height - topBarH - totalH);
     [splitView setFrame:spFrame];
     [splitView adjustSubviews];
+
+    /* setFrame:だけでは古い位置の描画が残る(残像)ことがあったため、
+     * コンテンツビュー全体に再描画を明示的に指示する */
+    [contentView setNeedsDisplay:YES];
+    [bookmarkBarView setNeedsDisplay:YES];
+    [splitView setNeedsDisplay:YES];
 }
 
 /* 履歴には積まずにページを読み込む(戻る操作専用の下位メソッド) */
