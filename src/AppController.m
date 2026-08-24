@@ -125,10 +125,10 @@
      * 差し替えに過ぎず、クリック判定領域の幅はtitleプロパティの実際の
      * 文字列長から計算される。空文字列のままだと表示(広い)と判定領域
      * (ほぼ0幅)がずれてクリックできなくなるため、実際のアプリ名を設定する。 */
-    NSMenuItem *appMenuItem = [[NSMenuItem alloc] initWithTitle:PWRJPStr("コダマ") action:NULL keyEquivalent:@""];
+    NSMenuItem *appMenuItem = [[NSMenuItem alloc] initWithTitle:@"Kodama" action:NULL keyEquivalent:@""];
     [menubar addItem:appMenuItem];
 
-    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:PWRJPStr("コダマ")];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Kodama"];
     aboutMenuItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"about") action:@selector(aboutAction:) keyEquivalent:@""];
     [aboutMenuItem setTarget:self];
     [appMenu addItem:aboutMenuItem];
@@ -143,30 +143,32 @@
 
     /* 編集メニュー。target=nilで作ることで「今フォーカスしている
      * 入力欄」に自動的にコマンドが飛ぶ(標準的なCocoaの作法)。
-     * これが無いとCmd+V等の編集ショートカットがURL欄で効かない。 */
-    NSMenuItem *editMenuItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"editMenu") action:NULL keyEquivalent:@""];
+     * これが無いとCmd+V等の編集ショートカットがURL欄で効かない。
+     * 各項目をivarに保持し、refreshLocalizedTextで言語切り替えに
+     * 追従させる(以前ここを更新対象に入れ忘れていた不具合の修正)。 */
+    editMenuItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"editMenu") action:NULL keyEquivalent:@""];
     [menubar addItem:editMenuItem];
 
     NSMenu *editMenu = [[NSMenu alloc] initWithTitle:PWRL(@"editMenu")];
-    NSMenuItem *undoItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"undo") action:@selector(undo:) keyEquivalent:@"z"];
+    undoItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"undo") action:@selector(undo:) keyEquivalent:@"z"];
     [editMenu addItem:undoItem];
     [undoItem release];
-    NSMenuItem *redoItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"redo") action:@selector(redo:) keyEquivalent:@"Z"];
+    redoItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"redo") action:@selector(redo:) keyEquivalent:@"Z"];
     [redoItem setKeyEquivalentModifierMask:(NSCommandKeyMask | NSShiftKeyMask)];
     [editMenu addItem:redoItem];
     [redoItem release];
     [editMenu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *cutItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"cut") action:@selector(cut:) keyEquivalent:@"x"];
+    cutItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"cut") action:@selector(cut:) keyEquivalent:@"x"];
     [editMenu addItem:cutItem];
     [cutItem release];
-    NSMenuItem *copyItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"copy") action:@selector(copy:) keyEquivalent:@"c"];
+    copyItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"copy") action:@selector(copy:) keyEquivalent:@"c"];
     [editMenu addItem:copyItem];
     [copyItem release];
-    NSMenuItem *pasteItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"paste") action:@selector(paste:) keyEquivalent:@"v"];
+    pasteItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"paste") action:@selector(paste:) keyEquivalent:@"v"];
     [editMenu addItem:pasteItem];
     [pasteItem release];
     [editMenu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *selectAllItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"selectAll") action:@selector(selectAll:) keyEquivalent:@"a"];
+    selectAllItem = [[NSMenuItem alloc] initWithTitle:PWRL(@"selectAll") action:@selector(selectAll:) keyEquivalent:@"a"];
     [editMenu addItem:selectAllItem];
     [selectAllItem release];
     [editMenuItem setSubmenu:editMenu];
@@ -247,6 +249,13 @@
     [[headingColumn headerCell] setStringValue:PWRL(@"headings")];
     [aboutMenuItem setTitle:PWRL(@"about")];
     [quitMenuItem setTitle:PWRL(@"quit")];
+    [editMenuItem setTitle:PWRL(@"editMenu")];
+    [undoItem setTitle:PWRL(@"undo")];
+    [redoItem setTitle:PWRL(@"redo")];
+    [cutItem setTitle:PWRL(@"cut")];
+    [copyItem setTitle:PWRL(@"copy")];
+    [pasteItem setTitle:PWRL(@"paste")];
+    [selectAllItem setTitle:PWRL(@"selectAll")];
     [languageMenuItem setTitle:PWRL(@"languageMenu")];
     [hideImageButton setTitle:PWRL(@"hideImage")];
     [self updateBookmarkToggleTitle];
@@ -256,6 +265,10 @@
 
     if (currentStatusKey) {
         [self setStatus:PWRL(currentStatusKey) statusKey:currentStatusKey];
+    } else if ([[currentPage pageTitle] length] > 0) {
+        /* ページタイトル表示中(currentStatusKey==nil)でも、末尾のアプリ名部分は
+         * 言語切り替えに追従させる */
+        [window setTitle:[NSString stringWithFormat:@"%@ - %@", [currentPage pageTitle], PWRL(@"appName")]];
     }
 }
 
@@ -270,7 +283,7 @@
                                             backing:NSBackingStoreBuffered
                                               defer:NO];
     [window setMinSize:NSMakeSize(500.0, 320.0)];
-    [window setTitle:PWRJPStr("コダマ")];
+    [window setTitle:PWRL(@"appName")];
 
     NSView *contentView = [window contentView];
     NSRect contentBounds = [contentView bounds];
@@ -1083,7 +1096,7 @@
     if ([pageTitle length] > 0) {
         [currentStatusKey release];
         currentStatusKey = nil;
-        [window setTitle:[NSString stringWithFormat:PWRJPStr("%@ - コダマ"), pageTitle]];
+        [window setTitle:[NSString stringWithFormat:@"%@ - %@", pageTitle, PWRL(@"appName")]];
     } else {
         [self setStatus:PWRL(@"ready") statusKey:@"ready"];
     }
@@ -1157,7 +1170,7 @@
 - (void)setStatus:(NSString *)text statusKey:(NSString *)key {
     [currentStatusKey release];
     currentStatusKey = [key copy];
-    [window setTitle:[NSString stringWithFormat:PWRJPStr("コダマ - %@"), text]];
+    [window setTitle:[NSString stringWithFormat:@"%@ - %@", PWRL(@"appName"), text]];
 }
 
 @end

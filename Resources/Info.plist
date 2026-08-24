@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>コダマ</string>
+	<string>Kodama</string>
 	<key>CFBundleDisplayName</key>
-	<string>コダマ</string>
+	<string>Kodama</string>
 	<key>CFBundleExecutable</key>
 	<string>Kodama</string>
 	<key>CFBundleIdentifier</key>

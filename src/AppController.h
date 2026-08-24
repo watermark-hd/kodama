@@ -51,6 +51,13 @@
 
     NSMenuItem *aboutMenuItem;
     NSMenuItem *quitMenuItem;
+    NSMenuItem *editMenuItem;
+    NSMenuItem *undoItem;
+    NSMenuItem *redoItem;
+    NSMenuItem *cutItem;
+    NSMenuItem *copyItem;
+    NSMenuItem *pasteItem;
+    NSMenuItem *selectAllItem;
     NSMenuItem *languageMenuItem;
     NSMenuItem *japaneseMenuItem;
     NSMenuItem *englishMenuItem;
