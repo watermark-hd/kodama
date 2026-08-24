@@ -44,6 +44,8 @@ static NSDictionary *gEnStrings = nil;
         PWRJPStr("OK"), @"ok",
         PWRJPStr("モダンなcurlが見つかりません(MacPortsやTigerbrewでインストールしてください)"), @"curlNotFound",
         PWRJPStr("通信に失敗しました(curl終了コード %d)"), @"curlFailedFormat",
+        PWRJPStr("ダウンロードを保存"), @"saveDownload",
+        PWRJPStr("ファイルの保存に失敗しました"), @"downloadWriteFailed",
         nil];
 
     gEnStrings = [[NSDictionary alloc] initWithObjectsAndKeys:
@@ -76,6 +78,8 @@ static NSDictionary *gEnStrings = nil;
         @"OK", @"ok",
         @"Modern curl not found (please install via MacPorts or Tigerbrew)", @"curlNotFound",
         @"Request failed (curl exit code %d)", @"curlFailedFormat",
+        @"Save Download", @"saveDownload",
+        @"Failed to save the file", @"downloadWriteFailed",
         nil];
 
     gCurrentLanguage = [@"ja" retain]; /* デフォルトは日本語 */

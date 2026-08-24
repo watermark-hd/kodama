@@ -32,6 +32,11 @@
     BOOL didTerminate;
     BOOL didReachEOF;
     int terminationStatus;
+
+    NSString *headerFilePath;
+    NSString *responseContentType;
+    NSString *responseSuggestedFilename;
+    BOOL responseIsAttachment;
 }
 
 /* MacPorts/Tigerbrew配下などから、使えるcurlバイナリのパスを探す。
@@ -43,5 +48,15 @@
 
 /* 非同期でURLを取得する。完了/失敗はdelegateに通知される。 */
 - (void)fetchURL:(NSURL *)url context:(id)context;
+
+/* 取得完了後(didFinishWithData:context:内)でのみ有効。
+ * レスポンスがHTMLページではなくファイルダウンロードらしいかどうかを、
+ * Content-Disposition: attachment / Content-Typeから判定する。
+ * URLの拡張子だけでは/download/kodamaのような拡張子なしのダウンロード
+ * ルートを判定できないため、実際のレスポンスヘッダを見て決める。 */
+- (BOOL)responseLooksLikeDownload;
+
+/* Content-Dispositionのfilenameから取得したファイル名。無ければnil。 */
+- (NSString *)responseSuggestedFilename;
 
 @end

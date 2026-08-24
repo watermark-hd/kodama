@@ -50,6 +50,48 @@
 
 @end
 
+/* URL取得中に一時的に保持しておく、遷移リクエスト1件分の情報。
+ * CurlTaskRunnerのcontextとして渡す(画像取得は素のNSURLをcontextに
+ * 使っているため、区別できるよう専用クラスにしている)。
+ * pushCurrentToHistoryは、取得完了時にHTMLだと確定した場合にだけ
+ * 現在のページを履歴へ積むかどうかを表す(navigateToURL:はYES、
+ * 戻る/進む操作はNO)。 */
+@interface PWRNavigationRequest : NSObject
+{
+    NSURL *url;
+    BOOL pushCurrentToHistory;
+}
+- (id)initWithURL:(NSURL *)aURL pushCurrentToHistory:(BOOL)aPush;
+- (NSURL *)url;
+- (BOOL)pushCurrentToHistory;
+@end
+
+@implementation PWRNavigationRequest
+
+- (id)initWithURL:(NSURL *)aURL pushCurrentToHistory:(BOOL)aPush {
+    self = [super init];
+    if (self) {
+        url = [aURL retain];
+        pushCurrentToHistory = aPush;
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [url release];
+    [super dealloc];
+}
+
+- (NSURL *)url {
+    return url;
+}
+
+- (BOOL)pushCurrentToHistory {
+    return pushCurrentToHistory;
+}
+
+@end
+
 @interface AppController (PWRPrivate)
 - (void)buildMenuBar;
 - (void)buildWindow;
@@ -58,6 +100,8 @@
 - (void)setStatus:(NSString *)text statusKey:(NSString *)key;
 - (void)loadURL:(NSURL *)url;
 - (void)navigateToURL:(NSURL *)url;
+- (void)beginLoad:(NSURL *)url pushCurrentToHistory:(BOOL)pushCurrentToHistory;
+- (void)saveDownloadedData:(NSData *)data suggestedFilename:(NSString *)suggestedFilename;
 - (void)displayParsedPage:(PWRParsedPage *)page;
 - (void)collapseRightPane;
 - (void)expandRightPane;
@@ -590,17 +634,11 @@
  * 「進む」で辿れるのは戻った直後だけ、という通常のブラウザの挙動に
  * 合わせ、新規移動では進む履歴を破棄する。 */
 - (void)navigateToURL:(NSURL *)url {
-    if (currentBaseURL) {
-        PWRHistoryEntry *entry = [[PWRHistoryEntry alloc] initWithURL:currentBaseURL
-                                                                  title:[currentPage pageTitle]];
-        [navigationHistory addObject:entry];
-        [entry release];
-        [backButton setEnabled:YES];
-        [self rebuildHistoryMenu];
-    }
-    [forwardHistory removeAllObjects];
-    [forwardButton setEnabled:NO];
-    [self loadURL:url];
+    /* 履歴の更新(現在のページをnavigationHistoryへ積む/forwardHistoryを破棄)は
+     * ここでは行わず、取得完了後に「実際にHTMLページだった」場合にのみ行う
+     * (beginLoad:pushCurrentToHistory:参照)。ダウンロードだった場合に
+     * 現在表示中のページの履歴状態を誤って書き換えないようにするため。 */
+    [self beginLoad:url pushCurrentToHistory:YES];
 }
 
 - (void)backAction:(id)sender {
@@ -1015,23 +1053,48 @@
 
 /* 履歴には積まずにページを読み込む(戻る操作専用の下位メソッド) */
 - (void)loadURL:(NSURL *)url {
-    [currentBaseURL release];
-    currentBaseURL = [url retain];
+    [self beginLoad:url pushCurrentToHistory:NO];
+}
 
-    [urlField setStringValue:[url absoluteString]];
-    [self collapseRightPane];
-
-    [currentPage release];
-    currentPage = nil;
-    [[bodyTextView textStorage] setAttributedString:[[[NSAttributedString alloc] initWithString:@""] autorelease]];
-    [headingTableView reloadData];
-
+/* URL取得を開始する。取得結果がHTMLページかファイルダウンロードかは
+ * 取得が完了するまで分からないため、currentBaseURL/本文表示/履歴の
+ * 更新はここでは行わず、取得完了後(didFinishWithData:context:)で
+ * HTMLだと確定してから行う。こうすることで、リンク先が実はダウンロード
+ * だった場合に現在表示中のページを誤って消してしまうのを防ぐ。 */
+- (void)beginLoad:(NSURL *)url pushCurrentToHistory:(BOOL)pushCurrentToHistory {
     [self setStatus:PWRL(@"loading") statusKey:@"loading"];
     [progressIndicator startAnimation:nil];
 
+    PWRNavigationRequest *req = [[PWRNavigationRequest alloc] initWithURL:url
+                                                        pushCurrentToHistory:pushCurrentToHistory];
     CurlTaskRunner *runner = [[CurlTaskRunner alloc] initWithDelegate:self];
-    [runner fetchURL:url context:@"html"];
+    [runner fetchURL:url context:req];
     [runner release]; /* fetchURL内部で自己retainするのでここで手放してよい */
+    [req release];
+}
+
+#pragma mark - ファイルダウンロード
+
+/* 取得済みのバイナリデータを、保存パネルで選んだ場所にそのまま書き出す。 */
+- (void)saveDownloadedData:(NSData *)data suggestedFilename:(NSString *)suggestedFilename {
+    if ([suggestedFilename length] == 0) {
+        suggestedFilename = @"download";
+    }
+
+    NSSavePanel *panel = [NSSavePanel savePanel];
+    [panel setTitle:PWRL(@"saveDownload")];
+
+    int result = [panel runModalForDirectory:NSHomeDirectory() file:suggestedFilename];
+    if (result == NSFileHandlingPanelOKButton) {
+        if (![data writeToFile:[panel filename] atomically:YES]) {
+            NSAlert *alert = [NSAlert alertWithMessageText:PWRL(@"networkError")
+                                              defaultButton:PWRL(@"ok")
+                                            alternateButton:nil
+                                                otherButton:nil
+                                 informativeTextWithFormat:@"%@", PWRL(@"downloadWriteFailed")];
+            [alert runModal];
+        }
+    }
 }
 
 #pragma mark - CurlTaskRunnerDelegate
@@ -1050,7 +1113,49 @@
         return;
     }
 
-    /* HTML取得の完了 */
+    /* URL取得の完了(HTMLページ or ファイルダウンロード)。
+     * URLの拡張子だけでは/download/kodamaのような拡張子なしの
+     * ダウンロードルートを判定できないため、実際のレスポンスヘッダ
+     * (Content-Disposition/Content-Type)を見て判断する。 */
+    PWRNavigationRequest *req = (PWRNavigationRequest *)context;
+
+    if ([runner responseLooksLikeDownload]) {
+        NSString *suggestedName = [runner responseSuggestedFilename];
+        if ([suggestedName length] == 0) {
+            suggestedName = [[[req url] path] lastPathComponent];
+        }
+        /* 現在のページ状態(履歴・URL欄・本文)には一切触れない。
+         * loading表示にしていたステータスだけを元に戻す。 */
+        if (currentStatusKey) {
+            [self setStatus:PWRL(currentStatusKey) statusKey:currentStatusKey];
+        } else if ([[currentPage pageTitle] length] > 0) {
+            [window setTitle:[NSString stringWithFormat:@"%@ - %@", [currentPage pageTitle], PWRL(@"appName")]];
+        } else {
+            [self setStatus:PWRL(@"ready") statusKey:@"ready"];
+        }
+        [self saveDownloadedData:data suggestedFilename:suggestedName];
+        return;
+    }
+
+    /* HTMLページだと確定したので、ここで初めて実際にページ遷移を行う */
+    if ([req pushCurrentToHistory]) {
+        if (currentBaseURL) {
+            PWRHistoryEntry *entry = [[PWRHistoryEntry alloc] initWithURL:currentBaseURL
+                                                                      title:[currentPage pageTitle]];
+            [navigationHistory addObject:entry];
+            [entry release];
+            [backButton setEnabled:YES];
+            [self rebuildHistoryMenu];
+        }
+        [forwardHistory removeAllObjects];
+        [forwardButton setEnabled:NO];
+    }
+
+    [currentBaseURL release];
+    currentBaseURL = [[req url] retain];
+    [urlField setStringValue:[[req url] absoluteString]];
+    [self collapseRightPane];
+
     PWRParsedPage *page = [HTMLParserEngine parsePageFromData:data baseURL:currentBaseURL];
     if (!page) {
         [self setStatus:PWRL(@"parseError") statusKey:@"parseError"];

@@ -4,6 +4,7 @@
 
 @interface CurlTaskRunner (PWRPrivate)
 - (void)finalizeIfReady;
+- (void)parseResponseHeaders;
 @end
 
 @implementation CurlTaskRunner
@@ -54,6 +55,9 @@
     [receivedData release];
     [requestURL release];
     [requestContext release];
+    [headerFilePath release];
+    [responseContentType release];
+    [responseSuggestedFilename release];
     [super dealloc];
 }
 
@@ -72,11 +76,18 @@
     didReachEOF = NO;
     terminationStatus = 0;
 
+    /* レスポンスヘッダ(Content-Type/Content-Disposition)をファイルに
+     * 書き出させる。標準出力(本文データ)とは別ファイルにすることで、
+     * バイナリの本文データにヘッダ文字列が混入するのを避ける。 */
+    headerFilePath = [[NSTemporaryDirectory() stringByAppendingPathComponent:
+        [NSString stringWithFormat:@"kodama-headers-%@", [[NSProcessInfo processInfo] globallyUniqueString]]] retain];
+
     task = [[NSTask alloc] init];
     [task setLaunchPath:curlPath];
     [task setArguments:[NSArray arrayWithObjects:
         @"-sS",                 /* サイレント、ただしエラーは表示 */
         @"-L",                  /* リダイレクト追跡 */
+        @"-D", headerFilePath,  /* レスポンスヘッダの書き出し先 */
         @"--max-time", @"30",
         @"-A", @"Kodama/0.1 (Mac OS X 10.4 PowerPC)",
         [url absoluteString],
@@ -133,6 +144,7 @@
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 
     if (terminationStatus == 0) {
+        [self parseResponseHeaders];
         [delegate curlTaskRunner:self didFinishWithData:receivedData context:requestContext];
     } else {
         NSString *msg = [NSString stringWithFormat:PWRL(@"curlFailedFormat"), terminationStatus];
@@ -140,6 +152,77 @@
     }
 
     [self autorelease];
+}
+
+/* -Dで書き出させたヘッダファイルを読み、Content-Type/Content-Dispositionを
+ * 拾う。-Lでリダイレクトを辿った場合はホップごとのヘッダが連続して
+ * 書き込まれるため、後方のブロックほど上書きすることで最終レスポンスの
+ * 値を採用する。 */
+- (void)parseResponseHeaders {
+    if (!headerFilePath) {
+        return;
+    }
+    NSString *headerText = [NSString stringWithContentsOfFile:headerFilePath
+                                                        encoding:NSUTF8StringEncoding
+                                                           error:NULL];
+    [[NSFileManager defaultManager] removeFileAtPath:headerFilePath handler:nil];
+
+    if (!headerText) {
+        return;
+    }
+
+    NSArray *lines = [headerText componentsSeparatedByString:@"\n"];
+    NSEnumerator *le = [lines objectEnumerator];
+    NSString *line;
+    while ((line = [le nextObject])) {
+        NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSString *lower = [trimmed lowercaseString];
+
+        if ([lower hasPrefix:@"content-type:"]) {
+            NSString *value = [trimmed substringFromIndex:[@"content-type:" length]];
+            [responseContentType release];
+            responseContentType = [[value stringByTrimmingCharactersInSet:
+                [NSCharacterSet whitespaceAndNewlineCharacterSet]] retain];
+        } else if ([lower hasPrefix:@"content-disposition:"]) {
+            responseIsAttachment = ([lower rangeOfString:@"attachment"].location != NSNotFound);
+
+            NSRange filenameRange = [trimmed rangeOfString:@"filename=" options:NSCaseInsensitiveSearch];
+            if (filenameRange.location != NSNotFound) {
+                NSString *filenamePart = [trimmed substringFromIndex:NSMaxRange(filenameRange)];
+                NSRange semiRange = [filenamePart rangeOfString:@";"];
+                if (semiRange.location != NSNotFound) {
+                    filenamePart = [filenamePart substringToIndex:semiRange.location];
+                }
+                filenamePart = [filenamePart stringByTrimmingCharactersInSet:
+                    [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                filenamePart = [filenamePart stringByTrimmingCharactersInSet:
+                    [NSCharacterSet characterSetWithCharactersInString:@"\""]];
+                [responseSuggestedFilename release];
+                responseSuggestedFilename = [filenamePart retain];
+            }
+        }
+    }
+}
+
+- (BOOL)responseLooksLikeDownload {
+    if (responseIsAttachment) {
+        return YES;
+    }
+    if (!responseContentType) {
+        /* ヘッダが取れなかった場合は従来通りHTMLとして扱う(安全側) */
+        return NO;
+    }
+    NSString *ct = [responseContentType lowercaseString];
+    if ([ct hasPrefix:@"text/"] ||
+        [ct rangeOfString:@"html"].location != NSNotFound ||
+        [ct rangeOfString:@"xml"].location != NSNotFound) {
+        return NO;
+    }
+    return YES;
+}
+
+- (NSString *)responseSuggestedFilename {
+    return responseSuggestedFilename;
 }
 
 @end
