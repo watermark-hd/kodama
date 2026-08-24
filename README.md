@@ -26,6 +26,8 @@ WebKitを使わず、記事本文を構造化して読みやすく表示する�
 - 右ペイン: クリックした画像のプレビュー。普段は隠れている「隠れ3ペイン」方式
 - アドレスバー下に折りたたみ式のブックマークバー
 - 日本語/英語のUI切り替え
+- ファイルダウンロード(.dmg/.zip/.pdf等)は実際のレスポンスヘッダから判定し、
+  保存ダイアログで保存
 
 ### 動作要件
 
@@ -51,7 +53,6 @@ Xcode 2.5相当のgcc 4.0.0を前提にしています。開発は別のMac(Appl
 
 - HTMLフォーム(検索ボックス等)には対応していません。URL欄に検索語を入力すると
   DuckDuckGoのHTML版検索(`html.duckduckgo.com`)に問い合わせる簡易対応のみです
-- PDFやその他ファイルのダウンロードには未対応です
 - サイトごとのナビゲーション除外は簡易的なヒューリスティックのため、
   レイアウトによっては広告・メニュー等が本文に混ざることがあります
 
@@ -79,6 +80,8 @@ the goal is to stay usable even on a 450MHz G3.
   a "hidden third pane" layout
 - A collapsible bookmark bar under the address bar
 - Japanese/English UI switch, live at runtime
+- File downloads (.dmg/.zip/.pdf/etc.) are detected from the actual response
+  headers and saved via a save dialog
 
 ### Requirements
 
@@ -106,7 +109,6 @@ PowerPC machine, and build there.
 - No HTML form support (e.g. search boxes on a page). Typing a non-URL string
   into the address bar falls back to DuckDuckGo's HTML search endpoint
   (`html.duckduckgo.com`) instead
-- No PDF or generic file download support yet
 - Per-site navigation stripping is a simple heuristic, so ads/menus can still
   leak into the article body depending on how a given site is marked up
 
