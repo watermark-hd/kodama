@@ -505,7 +505,26 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
                 unsigned long index = [ctx->imageURLs count];
                 /* Tiger(2005年)にはApple Color Emojiフォントが存在しないため、
                  * 仕様書にある絵文字プレースホルダーは使わずASCII安全な表記にする */
-                NSString *placeholder = [NSString stringWithFormat:PWRJPStr("[ 画像%lu を表示 ]"), index];
+
+                /* alt属性があればラベルに含める。天気図・避難所情報等の
+                 * 画像はaltが付いていることが多く、広告画像は空のことが
+                 * 多いため、番号だけより目的の画像を見分けやすくなる。 */
+                NSString *placeholder;
+                xmlChar *altAttr = xmlGetProp(node, (const xmlChar *)"alt");
+                NSString *altStr = altAttr ? PWRCollapseWhitespace(PWRStringFromXmlChar(altAttr)) : @"";
+                if (altAttr) {
+                    xmlFree(altAttr);
+                }
+                altStr = [altStr stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if ([altStr length] > 30) {
+                    altStr = [[altStr substringToIndex:30] stringByAppendingString:PWRJPStr("…")];
+                }
+
+                if ([altStr length] > 0) {
+                    placeholder = [NSString stringWithFormat:PWRJPStr("[ 画像%lu: %@ を表示 ]"), index, altStr];
+                } else {
+                    placeholder = [NSString stringWithFormat:PWRJPStr("[ 画像%lu を表示 ]"), index];
+                }
 
                 PWRLinkTarget *target = [[PWRLinkTarget alloc] initWithURL:resolved kind:PWRLinkKindImage];
                 NSMutableDictionary *attrs = [NSMutableDictionary dictionary];
