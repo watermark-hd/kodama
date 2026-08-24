@@ -17,13 +17,14 @@
     NSWindow *window;
 
     NSView *topBarView;
-    NSButton *addBookmarkButton;
     NSButton *backButton;
+    NSButton *forwardButton;
     NSTextField *urlField;
-    NSButton *openButton;
+    NSButton *addBookmarkButton;
     NSProgressIndicator *progressIndicator;
 
     NSMutableArray *navigationHistory; /* 戻る用: 訪問済みURLのスタック */
+    NSMutableArray *forwardHistory; /* 進む用: 戻った分のURLのスタック */
 
     NSView *bookmarkBarView; /* ブックマークが1件も無い時は高さ0で隠れる */
     NSMutableArray *bookmarks; /* {"title":..., "url":...}の配列。NSUserDefaultsで永続化 */

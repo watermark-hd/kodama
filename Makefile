@@ -1,8 +1,8 @@
-# PPC-WebReader ビルド設定
+# コダマ(Kodama) ビルド設定
 # PowerMac G4 (Mac OS X 10.4 Tiger) 上のXcode 2.5付属gcc/ldでのビルドを前提とする。
 # Xcodeプロジェクトファイルは使わず、SSH越しに `make` だけで完結させる。
 
-APP_NAME   = PPC-WebReader
+APP_NAME   = Kodama
 BUILD_DIR  = build
 APP_BUNDLE = $(BUILD_DIR)/$(APP_NAME).app
 CONTENTS   = $(APP_BUNDLE)/Contents
@@ -30,7 +30,7 @@ CURL_TEST_SOURCES = src/CurlTaskRunner.m src/PWRLocalization.m tools/curl_test.m
 
 all: app
 
-app: $(MACOS_DIR)/$(APP_NAME) $(CONTENTS)/Info.plist $(RES_DIR)/PPC-WebReader.icns
+app: $(MACOS_DIR)/$(APP_NAME) $(CONTENTS)/Info.plist $(RES_DIR)/Kodama.icns
 
 $(MACOS_DIR)/$(APP_NAME): $(OBJECTS)
 	@mkdir -p $(MACOS_DIR)
@@ -40,7 +40,7 @@ $(CONTENTS)/Info.plist: Resources/Info.plist
 	@mkdir -p $(CONTENTS)
 	cp $< $@
 
-$(RES_DIR)/PPC-WebReader.icns: Resources/PPC-WebReader.icns
+$(RES_DIR)/Kodama.icns: Resources/Kodama.icns
 	@mkdir -p $(RES_DIR)
 	cp $< $@
 

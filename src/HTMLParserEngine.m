@@ -180,13 +180,15 @@ static NSData *PWRStripRawTextBlocks(NSData *htmlData) {
 - (id)initWithHeadings:(NSArray *)aHeadings
                bodyText:(NSAttributedString *)aBodyText
               imageURLs:(NSArray *)anImageURLs
-              pageTitle:(NSString *)aPageTitle {
+              pageTitle:(NSString *)aPageTitle
+         metaRefreshURL:(NSURL *)aMetaRefreshURL {
     self = [super init];
     if (self) {
         headings = [aHeadings copy];
         bodyText = [aBodyText copy];
         imageURLs = [anImageURLs copy];
         pageTitle = [aPageTitle copy];
+        metaRefreshURL = [aMetaRefreshURL retain];
     }
     return self;
 }
@@ -196,11 +198,16 @@ static NSData *PWRStripRawTextBlocks(NSData *htmlData) {
     [bodyText release];
     [imageURLs release];
     [pageTitle release];
+    [metaRefreshURL release];
     [super dealloc];
 }
 
 - (NSString *)pageTitle {
     return pageTitle;
+}
+
+- (NSURL *)metaRefreshURL {
+    return metaRefreshURL;
 }
 
 - (NSArray *)headings {
@@ -332,6 +339,53 @@ static xmlNode *PWRFindNodeByName(xmlNode *node, const char *name) {
         }
         if (cur->children) {
             xmlNode *found = PWRFindNodeByName(cur->children, name);
+            if (found) {
+                return found;
+            }
+        }
+    }
+    return NULL;
+}
+
+/* <meta http-equiv="refresh" content="0;URL=...">での自動転送先を探す。
+ * DuckDuckGoの検索結果リンク等、HTTPリダイレクトではなくこの仕組みで
+ * 転送する「クッションページ」が実サイトに多いことを実機で確認したため、
+ * これが無いとクリックしても何も表示されない(空白のまま)問題があった。 */
+static NSURL *PWRFindMetaRefreshURL(xmlNode *node, NSURL *baseURL) {
+    xmlNode *cur;
+    for (cur = node; cur; cur = cur->next) {
+        if (cur->type == XML_ELEMENT_NODE && xmlStrcasecmp(cur->name, (const xmlChar *)"meta") == 0) {
+            xmlChar *httpEquiv = xmlGetProp(cur, (const xmlChar *)"http-equiv");
+            BOOL isRefresh = (httpEquiv && xmlStrcasecmp(httpEquiv, (const xmlChar *)"refresh") == 0);
+            if (httpEquiv) {
+                xmlFree(httpEquiv);
+            }
+            if (isRefresh) {
+                xmlChar *content = xmlGetProp(cur, (const xmlChar *)"content");
+                if (content) {
+                    NSString *contentStr = PWRStringFromXmlChar(content);
+                    xmlFree(content);
+                    NSRange urlRange = [contentStr rangeOfString:@"url=" options:NSCaseInsensitiveSearch];
+                    if (urlRange.location != NSNotFound) {
+                        NSString *urlPart = [contentStr substringFromIndex:NSMaxRange(urlRange)];
+                        urlPart = [urlPart stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                        if ([urlPart length] >= 2) {
+                            unichar first = [urlPart characterAtIndex:0];
+                            unichar last = [urlPart characterAtIndex:([urlPart length] - 1)];
+                            if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+                                urlPart = [urlPart substringWithRange:NSMakeRange(1, [urlPart length] - 2)];
+                            }
+                        }
+                        NSURL *resolved = [[NSURL URLWithString:urlPart relativeToURL:baseURL] absoluteURL];
+                        if (resolved) {
+                            return resolved;
+                        }
+                    }
+                }
+            }
+        }
+        if (cur->children) {
+            NSURL *found = PWRFindMetaRefreshURL(cur->children, baseURL);
             if (found) {
                 return found;
             }
@@ -620,12 +674,15 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
         }
     }
 
+    NSURL *metaRefreshURL = root ? PWRFindMetaRefreshURL(root, baseURL) : nil;
+
     xmlFreeDoc(doc);
 
     PWRParsedPage *page = [[[PWRParsedPage alloc] initWithHeadings:ctx.headings
                                                             bodyText:ctx.body
                                                            imageURLs:ctx.imageURLs
-                                                           pageTitle:pageTitle] autorelease];
+                                                           pageTitle:pageTitle
+                                                      metaRefreshURL:metaRefreshURL] autorelease];
     [ctx.body release];
     return page;
 }

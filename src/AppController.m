@@ -69,6 +69,7 @@
     [currentBaseURL release];
     [currentStatusKey release];
     [navigationHistory release];
+    [forwardHistory release];
     [bookmarks release];
     [bookmarkDeleteButtons release];
     [bookmarkTrackingTags release];
@@ -80,6 +81,7 @@
     rightPaneExpandedWidth = 260.0;
     bookmarkBarHeight = 28.0;
     navigationHistory = [[NSMutableArray alloc] init];
+    forwardHistory = [[NSMutableArray alloc] init];
     [self loadBookmarks];
     bookmarkDeleteButtons = [[NSMutableArray alloc] init];
     bookmarkTrackingTags = [[NSMutableArray alloc] init];
@@ -110,7 +112,7 @@
      * 差し替えに過ぎず、クリック判定領域の幅はtitleプロパティの実際の
      * 文字列長から計算される。空文字列のままだと表示(広い)と判定領域
      * (ほぼ0幅)がずれてクリックできなくなるため、実際のアプリ名を設定する。 */
-    NSMenuItem *appMenuItem = [[NSMenuItem alloc] initWithTitle:@"PPC-WebReader" action:NULL keyEquivalent:@""];
+    NSMenuItem *appMenuItem = [[NSMenuItem alloc] initWithTitle:@"Kodama" action:NULL keyEquivalent:@""];
     [menubar addItem:appMenuItem];
 
     NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@""];
@@ -197,7 +199,7 @@
 - (void)refreshLocalizedText {
     [addBookmarkButton setTitle:PWRL(@"addBookmark")];
     [backButton setTitle:PWRL(@"back")];
-    [openButton setTitle:PWRL(@"open")];
+    [forwardButton setTitle:PWRL(@"forward")];
     [[headingColumn headerCell] setStringValue:PWRL(@"headings")];
     [quitMenuItem setTitle:PWRL(@"quit")];
     [languageMenuItem setTitle:PWRL(@"languageMenu")];
@@ -222,7 +224,7 @@
                                             backing:NSBackingStoreBuffered
                                               defer:NO];
     [window setMinSize:NSMakeSize(500.0, 320.0)];
-    [window setTitle:@"PPC-WebReader"];
+    [window setTitle:PWRJPStr("コダマ")];
 
     NSView *contentView = [window contentView];
     NSRect contentBounds = [contentView bounds];
@@ -234,20 +236,14 @@
     topBarView = [[NSView alloc] initWithFrame:topBarFrame];
     [topBarView setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
 
-    float buttonWidth = 90.0;
+    /* 左: 戻る/進む。右: ブックマーク追加+読み込み中スピナー。中央: URL欄。
+     * 「開く」ボタンはEnterキーで代用できるため廃止した。 */
     float backButtonWidth = 70.0;
+    float forwardButtonWidth = 70.0;
     float addBookmarkWidth = 50.0;
+    float spinnerWidth = 20.0;
 
-    NSRect addBookmarkFrame = NSMakeRect(8.0, 5.0, addBookmarkWidth, 26.0);
-    addBookmarkButton = [[NSButton alloc] initWithFrame:addBookmarkFrame];
-    [addBookmarkButton setAutoresizingMask:NSViewMaxXMargin];
-    [addBookmarkButton setBezelStyle:NSRoundedBezelStyle];
-    [addBookmarkButton setTitle:PWRL(@"addBookmark")];
-    [addBookmarkButton setTarget:self];
-    [addBookmarkButton setAction:@selector(addBookmarkAction:)];
-    [topBarView addSubview:addBookmarkButton];
-
-    NSRect backButtonFrame = NSMakeRect(8.0 + addBookmarkWidth + 6.0, 5.0, backButtonWidth, 26.0);
+    NSRect backButtonFrame = NSMakeRect(8.0, 5.0, backButtonWidth, 26.0);
     backButton = [[NSButton alloc] initWithFrame:backButtonFrame];
     [backButton setAutoresizingMask:NSViewMaxXMargin];
     [backButton setBezelStyle:NSRoundedBezelStyle];
@@ -257,40 +253,49 @@
     [backButton setEnabled:NO];
     [topBarView addSubview:backButton];
 
-    float urlFieldX = 8.0 + addBookmarkWidth + 6.0 + backButtonWidth + 8.0;
-    float spinnerWidth = 20.0;
+    NSRect forwardButtonFrame = NSMakeRect(8.0 + backButtonWidth + 6.0, 5.0, forwardButtonWidth, 26.0);
+    forwardButton = [[NSButton alloc] initWithFrame:forwardButtonFrame];
+    [forwardButton setAutoresizingMask:NSViewMaxXMargin];
+    [forwardButton setBezelStyle:NSRoundedBezelStyle];
+    [forwardButton setTitle:PWRL(@"forward")];
+    [forwardButton setTarget:self];
+    [forwardButton setAction:@selector(forwardAction:)];
+    [forwardButton setEnabled:NO];
+    [topBarView addSubview:forwardButton];
+
+    float urlFieldX = 8.0 + backButtonWidth + 6.0 + forwardButtonWidth + 8.0;
+    float rightClusterW = addBookmarkWidth + 6.0 + spinnerWidth;
     NSRect urlFieldFrame = NSMakeRect(urlFieldX, 7.0,
-                                       topBarFrame.size.width - urlFieldX - buttonWidth - spinnerWidth - 24.0, 22.0);
+                                       topBarFrame.size.width - urlFieldX - rightClusterW - 16.0, 22.0);
     urlField = [[NSTextField alloc] initWithFrame:urlFieldFrame];
     [urlField setAutoresizingMask:NSViewWidthSizable];
     [urlField setTarget:self];
     [urlField setAction:@selector(openAction:)];
     [topBarView addSubview:urlField];
 
-    NSRect spinnerFrame = NSMakeRect(NSMaxX(urlFieldFrame) + 6.0, 8.0, spinnerWidth, spinnerWidth);
+    NSRect addBookmarkFrame = NSMakeRect(NSMaxX(urlFieldFrame) + 8.0, 5.0, addBookmarkWidth, 26.0);
+    addBookmarkButton = [[NSButton alloc] initWithFrame:addBookmarkFrame];
+    [addBookmarkButton setAutoresizingMask:NSViewMinXMargin];
+    [addBookmarkButton setBezelStyle:NSRoundedBezelStyle];
+    [addBookmarkButton setTitle:PWRL(@"addBookmark")];
+    [addBookmarkButton setTarget:self];
+    [addBookmarkButton setAction:@selector(addBookmarkAction:)];
+    [topBarView addSubview:addBookmarkButton];
+
+    NSRect spinnerFrame = NSMakeRect(NSMaxX(addBookmarkFrame) + 6.0, 8.0, spinnerWidth, spinnerWidth);
     progressIndicator = [[NSProgressIndicator alloc] initWithFrame:spinnerFrame];
     [progressIndicator setAutoresizingMask:NSViewMinXMargin];
     [progressIndicator setStyle:NSProgressIndicatorSpinningStyle];
     [progressIndicator setDisplayedWhenStopped:NO];
     [topBarView addSubview:progressIndicator];
 
-    NSRect openButtonFrame = NSMakeRect(topBarFrame.size.width - buttonWidth - 8.0, 5.0, buttonWidth, 26.0);
-    openButton = [[NSButton alloc] initWithFrame:openButtonFrame];
-    [openButton setAutoresizingMask:NSViewMinXMargin];
-    [openButton setBezelStyle:NSRoundedBezelStyle];
-    [openButton setTitle:PWRL(@"open")];
-    [openButton setTarget:self];
-    [openButton setAction:@selector(openAction:)];
-    [topBarView addSubview:openButton];
-
     [contentView addSubview:topBarView];
-    [window setDefaultButtonCell:[openButton cell]];
     [topBarView release];
-    [addBookmarkButton release];
     [backButton release];
+    [forwardButton release];
     [urlField release];
+    [addBookmarkButton release];
     [progressIndicator release];
-    [openButton release];
 
     /* --- ブックマークバー(アドレスバー直下、ブックマークが1件も無ければ高さ0) --- */
     float shownBookmarkH = ([bookmarks count] > 0) ? bookmarkBarHeight : 0.0;
@@ -456,6 +461,25 @@
 
 #pragma mark - URL入力
 
+/* "yahoo.co.jp"のようなドメインらしき文字列だけをURLとみなし、それ以外
+ * (スペースを含む・ドットが無い等)は検索ワードとして扱う簡易判定。
+ * Wikipedia等の検索フォーム自体はまだ扱えないため、URL欄からの検索で
+ * 代用できるようにする対応。 */
+- (BOOL)looksLikeURL:(NSString *)text {
+    if ([text rangeOfString:@" "].location != NSNotFound) {
+        return NO;
+    }
+    if ([text rangeOfString:@"://"].location != NSNotFound) {
+        return YES;
+    }
+    NSRange dotRange = [text rangeOfString:@"."];
+    if (dotRange.location == NSNotFound || dotRange.location == 0 ||
+        NSMaxRange(dotRange) >= [text length]) {
+        return NO;
+    }
+    return YES;
+}
+
 - (void)openAction:(id)sender {
     NSString *text = [urlField stringValue];
     text = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -463,10 +487,21 @@
         return;
     }
 
-    NSURL *url = [NSURL URLWithString:text];
-    if (!url || ![url scheme]) {
-        /* スキームが省略されていたらhttps://を補う */
-        url = [NSURL URLWithString:[@"https://" stringByAppendingString:text]];
+    NSURL *url;
+    if ([self looksLikeURL:text]) {
+        url = [NSURL URLWithString:text];
+        if (!url || ![url scheme]) {
+            /* スキームが省略されていたらhttps://を補う */
+            url = [NSURL URLWithString:[@"https://" stringByAppendingString:text]];
+        }
+    } else {
+        /* URLらしくない入力は検索へ。Googleは検証の結果、gbv=1(旧来の
+         * 簡易HTMLモード)を付けてもJS必須のページに転送されてしまい
+         * このアプリでは使えなかった。DuckDuckGoの素のHTML版エンドポイント
+         * (html.duckduckgo.com/html/)はscriptタグ無しの静的HTMLで
+         * 検索結果を返すため、こちらを使う */
+        NSString *encoded = [text stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+        url = [NSURL URLWithString:[NSString stringWithFormat:@"https://html.duckduckgo.com/html/?q=%@", encoded]];
     }
     if (!url) {
         return;
@@ -477,6 +512,9 @@
 
 /* 現在表示中のページがあれば履歴に積んでから新しいページへ移動する。
  * (URL欄からの入力・見出しリンクのクリック・本文中のリンクのクリック全てから呼ばれる) */
+/* 新しいページへの移動(URL欄からの入力・リンククリック・ブックマーク等)。
+ * 「進む」で辿れるのは戻った直後だけ、という通常のブラウザの挙動に
+ * 合わせ、新規移動では進む履歴を破棄する。 */
 - (void)navigateToURL:(NSURL *)url {
     if (currentBaseURL) {
         PWRHistoryEntry *entry = [[PWRHistoryEntry alloc] initWithURL:currentBaseURL
@@ -486,6 +524,8 @@
         [backButton setEnabled:YES];
         [self rebuildHistoryMenu];
     }
+    [forwardHistory removeAllObjects];
+    [forwardButton setEnabled:NO];
     [self loadURL:url];
 }
 
@@ -493,12 +533,38 @@
     if ([navigationHistory count] == 0) {
         return;
     }
+    if (currentBaseURL) {
+        PWRHistoryEntry *fwdEntry = [[PWRHistoryEntry alloc] initWithURL:currentBaseURL
+                                                                     title:[currentPage pageTitle]];
+        [forwardHistory addObject:fwdEntry];
+        [fwdEntry release];
+        [forwardButton setEnabled:YES];
+    }
     PWRHistoryEntry *previous = [[navigationHistory lastObject] retain];
     [navigationHistory removeLastObject];
     [backButton setEnabled:([navigationHistory count] > 0)];
     [self rebuildHistoryMenu];
     [self loadURL:[previous url]];
     [previous release];
+}
+
+- (void)forwardAction:(id)sender {
+    if ([forwardHistory count] == 0) {
+        return;
+    }
+    if (currentBaseURL) {
+        PWRHistoryEntry *backEntry = [[PWRHistoryEntry alloc] initWithURL:currentBaseURL
+                                                                      title:[currentPage pageTitle]];
+        [navigationHistory addObject:backEntry];
+        [backEntry release];
+        [backButton setEnabled:YES];
+        [self rebuildHistoryMenu];
+    }
+    PWRHistoryEntry *next = [[forwardHistory lastObject] retain];
+    [forwardHistory removeLastObject];
+    [forwardButton setEnabled:([forwardHistory count] > 0)];
+    [self loadURL:[next url]];
+    [next release];
 }
 
 /* 戻るボタンを右クリック(control+クリック)した時に出す履歴一覧から、
@@ -511,6 +577,8 @@
     PWRHistoryEntry *entry = [[navigationHistory objectAtIndex:index] retain];
     [navigationHistory removeObjectsInRange:NSMakeRange(index, [navigationHistory count] - index)];
     [backButton setEnabled:([navigationHistory count] > 0)];
+    [forwardHistory removeAllObjects];
+    [forwardButton setEnabled:NO];
     [self rebuildHistoryMenu];
     [self loadURL:[entry url]];
     [entry release];
@@ -627,22 +695,39 @@
     [existingSubviews release];
 
     float x = 6.0;
-    float buttonH = 20.0;
-    float chipW = 100.0;
-    float deleteButtonW = 18.0;
+    float buttonH = 18.0;
+    float maxChipW = 140.0;
+    float deleteButtonW = 16.0;
     float y = (bookmarkBarHeight - buttonH) / 2.0;
     int index = 0;
+    NSFont *bookmarkFont = [NSFont systemFontOfSize:11.0];
 
     NSEnumerator *e = [bookmarks objectEnumerator];
     NSDictionary *entry;
     while ((entry = [e nextObject])) {
         NSString *title = [entry objectForKey:@"title"];
-        NSButton *b = [[NSButton alloc] initWithFrame:NSMakeRect(x, y, chipW, buttonH)];
-        [b setBezelStyle:NSRoundedBezelStyle];
-        [b setTitle:title];
+
+        /* ボタン型ではなく、隣とスペースの空いた文字リンクだけの見た目にする
+         * (ブックマークが増えた時に窮屈にならないように、という要望対応) */
+        NSButton *b = [[NSButton alloc] initWithFrame:NSMakeRect(x, y, 10.0, buttonH)];
+        [b setBordered:NO];
         [b setTarget:self];
         [b setAction:@selector(bookmarkClicked:)];
         [b setTag:index];
+
+        NSMutableDictionary *titleAttrs = [NSMutableDictionary dictionary];
+        [titleAttrs setObject:[NSColor blackColor] forKey:NSForegroundColorAttributeName];
+        [titleAttrs setObject:bookmarkFont forKey:NSFontAttributeName];
+        NSAttributedString *attrTitle = [[NSAttributedString alloc] initWithString:title attributes:titleAttrs];
+        [b setAttributedTitle:attrTitle];
+        [attrTitle release];
+
+        [b sizeToFit];
+        float chipW = [b frame].size.width;
+        if (chipW > maxChipW) {
+            chipW = maxChipW;
+        }
+        [b setFrame:NSMakeRect(x, y, chipW, buttonH)];
 
         /* 右クリック(control+クリック)でも削除メニューを出せるようにしておく */
         NSMenu *contextMenu = [[NSMenu alloc] initWithTitle:@""];
@@ -659,10 +744,8 @@
         [bookmarkBarView addSubview:b];
         [b release];
 
-        /* ×削除ボタンはマウスを乗せた時だけ現れる(常時表示だと数が増えた時
-         * 邪魔になるという指摘を受けての対応)。ボタン本体の右端に重ねて置く */
-        NSRect deleteFrame = NSMakeRect(x + chipW - deleteButtonW - 2.0, y + 1.0,
-                                         deleteButtonW, buttonH - 2.0);
+        /* ×削除ボタンはマウスを乗せた時だけ、文字のすぐ右に現れる */
+        NSRect deleteFrame = NSMakeRect(x + chipW + 3.0, y - 1.0, deleteButtonW, buttonH);
         NSButton *deleteButton = [[NSButton alloc] initWithFrame:deleteFrame];
         [deleteButton setBezelStyle:NSSmallSquareBezelStyle];
         [deleteButton setTitle:PWRJPStr("×")];
@@ -674,14 +757,14 @@
         [bookmarkDeleteButtons addObject:deleteButton];
         [deleteButton release];
 
-        NSRect trackingFrame = NSMakeRect(x, y, chipW, buttonH);
+        NSRect trackingFrame = NSMakeRect(x, y, chipW + 3.0 + deleteButtonW, buttonH);
         NSTrackingRectTag tag = [bookmarkBarView addTrackingRect:trackingFrame
                                                              owner:self
                                                           userData:(void *)(long)index
                                                       assumeInside:NO];
         [bookmarkTrackingTags addObject:[NSNumber numberWithInt:tag]];
 
-        x += chipW + 6.0;
+        x += chipW + 3.0 + deleteButtonW + 12.0; /* 次のブックマークとの間に余白 */
         index++;
     }
 
@@ -782,6 +865,17 @@
 #pragma mark - ページ表示
 
 - (void)displayParsedPage:(PWRParsedPage *)page {
+    /* <meta http-equiv="refresh">を持つ「クッションページ」だった場合は、
+     * それ自体を表示せず目的のページへそのまま差し替える。履歴には
+     * クッションページの方は積まない(戻った時にまた転送されて実質
+     * 戻れなくなるのを防ぐため)。自己参照ループの簡易対策として、
+     * 転送先が今読み込んだURLと同じ場合だけは追従しない。 */
+    NSURL *refreshURL = [page metaRefreshURL];
+    if (refreshURL && ![[refreshURL absoluteString] isEqualToString:[currentBaseURL absoluteString]]) {
+        [self loadURL:refreshURL];
+        return;
+    }
+
     [currentPage release];
     currentPage = [page retain];
 
@@ -793,7 +887,7 @@
     if ([pageTitle length] > 0) {
         [currentStatusKey release];
         currentStatusKey = nil;
-        [window setTitle:[NSString stringWithFormat:@"%@ - PPC-WebReader", pageTitle]];
+        [window setTitle:[NSString stringWithFormat:PWRJPStr("%@ - コダマ"), pageTitle]];
     } else {
         [self setStatus:PWRL(@"ready") statusKey:@"ready"];
     }
@@ -813,7 +907,9 @@
     } else if ([heading level] == 3) {
         indent = @"    ";
     }
-    return [indent stringByAppendingString:[heading title]];
+    /* 「・」が無いと同レベルの見出しが並んだ時に記事の切れ目が分かりにくい
+     * という報告を受け、先頭に付ける */
+    return [NSString stringWithFormat:PWRJPStr("・%@%@"), indent, [heading title]];
 }
 
 - (void)tableViewSelectionDidChange:(NSNotification *)note {
@@ -865,7 +961,7 @@
 - (void)setStatus:(NSString *)text statusKey:(NSString *)key {
     [currentStatusKey release];
     currentStatusKey = [key copy];
-    [window setTitle:[NSString stringWithFormat:@"PPC-WebReader - %@", text]];
+    [window setTitle:[NSString stringWithFormat:PWRJPStr("コダマ - %@"), text]];
 }
 
 @end

@@ -78,7 +78,7 @@
         @"-sS",                 /* サイレント、ただしエラーは表示 */
         @"-L",                  /* リダイレクト追跡 */
         @"--max-time", @"30",
-        @"-A", @"PPC-WebReader/0.1 (Mac OS X 10.4 PowerPC)",
+        @"-A", @"Kodama/0.1 (Mac OS X 10.4 PowerPC)",
         [url absoluteString],
         nil]];
 

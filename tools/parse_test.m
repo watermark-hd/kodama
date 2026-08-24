@@ -35,6 +35,7 @@ int main(int argc, const char *argv[]) {
     }
 
     printf("=== ページタイトル ===\n%s\n\n", [page pageTitle] ? [[page pageTitle] UTF8String] : "(なし)");
+    printf("=== meta refresh転送先 ===\n%s\n\n", [page metaRefreshURL] ? [[[page metaRefreshURL] absoluteString] UTF8String] : "(なし)");
 
     printf("=== 見出し一覧 (%lu 件) ===\n", (unsigned long)[[page headings] count]);
     {

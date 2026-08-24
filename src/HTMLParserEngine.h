@@ -47,16 +47,19 @@ typedef enum {
     NSAttributedString *bodyText;
     NSArray *imageURLs;
     NSString *pageTitle; /* <title>タグの内容。無ければnil */
+    NSURL *metaRefreshURL; /* <meta http-equiv="refresh">での自動転送先。無ければnil */
 }
 
 - (id)initWithHeadings:(NSArray *)aHeadings
                bodyText:(NSAttributedString *)aBodyText
               imageURLs:(NSArray *)anImageURLs
-              pageTitle:(NSString *)aPageTitle;
+              pageTitle:(NSString *)aPageTitle
+         metaRefreshURL:(NSURL *)aMetaRefreshURL;
 - (NSArray *)headings;
 - (NSAttributedString *)bodyText;
 - (NSArray *)imageURLs;
 - (NSString *)pageTitle;
+- (NSURL *)metaRefreshURL;
 
 @end
 

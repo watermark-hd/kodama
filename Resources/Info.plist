@@ -3,13 +3,15 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>PPC-WebReader</string>
+	<string>コダマ</string>
+	<key>CFBundleDisplayName</key>
+	<string>コダマ</string>
 	<key>CFBundleExecutable</key>
-	<string>PPC-WebReader</string>
+	<string>Kodama</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.tomo820.ppcwebreader</string>
 	<key>CFBundleIconFile</key>
-	<string>PPC-WebReader.icns</string>
+	<string>Kodama.icns</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleSignature</key>
