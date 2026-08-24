@@ -1,5 +1,6 @@
 #import "HTMLParserEngine.h"
 #import "PWRCompat.h"
+#import "PWRLocalization.h"
 #include <libxml/HTMLparser.h>
 #include <libxml/tree.h>
 #include <libxml/xmlstring.h>
@@ -587,9 +588,9 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
                 }
 
                 if ([altStr length] > 0) {
-                    placeholder = [NSString stringWithFormat:PWRJPStr("[ 画像%lu: %@ を表示 ]"), index, altStr];
+                    placeholder = [NSString stringWithFormat:PWRL(@"showImageWithAlt"), index, altStr];
                 } else {
-                    placeholder = [NSString stringWithFormat:PWRJPStr("[ 画像%lu を表示 ]"), index];
+                    placeholder = [NSString stringWithFormat:PWRL(@"showImage"), index];
                 }
 
                 PWRLinkTarget *target = [[PWRLinkTarget alloc] initWithURL:resolved kind:PWRLinkKindImage];

@@ -46,6 +46,8 @@ static NSDictionary *gEnStrings = nil;
         PWRJPStr("通信に失敗しました(curl終了コード %d)"), @"curlFailedFormat",
         PWRJPStr("ダウンロードを保存"), @"saveDownload",
         PWRJPStr("ファイルの保存に失敗しました"), @"downloadWriteFailed",
+        PWRJPStr("[ 画像%lu を表示 ]"), @"showImage",
+        PWRJPStr("[ 画像%lu: %@ を表示 ]"), @"showImageWithAlt",
         nil];
 
     gEnStrings = [[NSDictionary alloc] initWithObjectsAndKeys:
@@ -80,6 +82,8 @@ static NSDictionary *gEnStrings = nil;
         @"Request failed (curl exit code %d)", @"curlFailedFormat",
         @"Save Download", @"saveDownload",
         @"Failed to save the file", @"downloadWriteFailed",
+        @"[ Show image %lu ]", @"showImage",
+        @"[ Show image %lu: %@ ]", @"showImageWithAlt",
         nil];
 
     gCurrentLanguage = [@"ja" retain]; /* デフォルトは日本語 */
