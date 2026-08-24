@@ -136,7 +136,9 @@
     rightPaneExpandedWidth = 260.0;
     bookmarkBarHeight = 20.0;
     bookmarkToggleStripHeight = 13.0;
-    bookmarkBarExpanded = NO;
+    /* 起動直後だけは開いた状態にしておき、すぐにブックマークをクリック
+     * できるようにする(記事を読んでいる最中は今まで通り手動で畳める)。 */
+    bookmarkBarExpanded = YES;
     navigationHistory = [[NSMutableArray alloc] init];
     forwardHistory = [[NSMutableArray alloc] init];
     [self loadBookmarks];
@@ -1194,7 +1196,20 @@
     currentPage = [page retain];
 
     [[bodyTextView textStorage] setAttributedString:[page bodyText]];
+
+    /* 見出しテーブルの選択行はreloadData後も行番号ベースで残ってしまう
+     * (以前のページで選択していた行が新しいページでもたまたま有効な
+     * 行数内だと、そのまま選択状態が残る)。ここで明示的に解除しておかないと、
+     * reloadDataで行数が減った際にAppKitが選択行を範囲内へ自動的に
+     * 詰め直し、その結果tableViewSelectionDidChange:が呼ばれて新しい
+     * ページの無関係な見出し(関連記事など)へ本文が自動スクロールして
+     * しまうことがあった。 */
+    [headingTableView deselectAll:nil];
     [headingTableView reloadData];
+
+    /* 本文スクロールビューも、選択解除だけでは前のページのスクロール
+     * 位置がそのまま残ってしまうため、明示的に先頭へ戻す。 */
+    [bodyTextView scrollRangeToVisible:NSMakeRange(0, 0)];
 
     /* ページに<title>があればウィンドウタイトルに反映する(通常のブラウザと同じ動作) */
     NSString *pageTitle = [page pageTitle];

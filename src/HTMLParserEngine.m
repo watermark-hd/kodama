@@ -53,22 +53,37 @@ static NSString *PWRDetectCharset(NSData *htmlData) {
  * 外に出たと誤認識し、以降のJSコードがそのまま本文に漏れて表示される
  * 問題を確認した。パーサーに渡す前に、生バイト列の段階で該当タグの
  * 中身を確実に取り除いてこれを回避する。 */
-static NSData *PWRStripTagBlock(NSData *data, const char *tagName) {
-    NSMutableData *working = [NSMutableData dataWithData:data];
-    [working appendBytes:"\0" length:1]; /* strcasestr/strchr用にNUL終端 */
+/* script/styleの両方を1回の走査で取り除く。
+ * 以前はscript用・style用で別々に(コピー→走査→コピー)を行っており、
+ * ページ全体のバイト列を都合4回複製していた。G3のような非力な機体では
+ * この前処理だけでも無視できないコストになるため、NUL終端用の複製を
+ * 1回だけにし、script/styleどちらが先に出てきても1パスで処理する。 */
+static NSData *PWRStripRawTextBlocks(NSData *htmlData) {
+    NSMutableData *working = [NSMutableData dataWithData:htmlData]; /* strcasestr/strchr用にNUL終端(1回だけ) */
+    [working appendBytes:"\0" length:1];
 
     const char *base = (const char *)[working bytes];
     long totalLen = (long)[working length] - 1;
 
-    char openTag[24];
-    char closeTag[24];
-    snprintf(openTag, sizeof(openTag), "<%s", tagName);
-    snprintf(closeTag, sizeof(closeTag), "</%s", tagName);
-
     NSMutableData *result = [NSMutableData dataWithCapacity:(unsigned)totalLen];
     long pos = 0;
     while (pos < totalLen) {
-        const char *foundOpen = strcasestr(base + pos, openTag);
+        const char *scriptOpen = strcasestr(base + pos, "<script");
+        const char *styleOpen = strcasestr(base + pos, "<style");
+
+        const char *foundOpen;
+        const char *closeTag;
+        if (scriptOpen && (!styleOpen || scriptOpen < styleOpen)) {
+            foundOpen = scriptOpen;
+            closeTag = "</script";
+        } else if (styleOpen) {
+            foundOpen = styleOpen;
+            closeTag = "</style";
+        } else {
+            foundOpen = NULL;
+            closeTag = NULL;
+        }
+
         if (!foundOpen) {
             [result appendBytes:(base + pos) length:(totalLen - pos)];
             break;
@@ -95,12 +110,6 @@ static NSData *PWRStripTagBlock(NSData *data, const char *tagName) {
     }
 
     return result;
-}
-
-static NSData *PWRStripRawTextBlocks(NSData *htmlData) {
-    NSData *noScript = PWRStripTagBlock(htmlData, "script");
-    NSData *noStyle = PWRStripTagBlock(noScript, "style");
-    return noStyle;
 }
 
 #pragma mark - PWRLinkTarget
@@ -300,16 +309,37 @@ static void PWREnsureSeparation(PWRWalkContext *ctx) {
     }
 }
 
+/* PWREnsureSeparationと同じ判定を、bodyの末尾ではなく指定位置(pos)の
+ * 直前に対して行い、必要なら改行をその位置へ挿入する。ブロック要素の
+ * 中身を後から追加してみて実際に何か残った場合にだけ区切りを入れたい
+ * ケース(PWRAppendNodeのisBlock処理)で使う。 */
+static void PWRInsertSeparationAt(PWRWalkContext *ctx, unsigned int pos) {
+    if (pos == 0) {
+        return;
+    }
+    if ([[ctx->body string] characterAtIndex:(pos - 1)] != '\n') {
+        NSAttributedString *nl = [[NSAttributedString alloc] initWithString:@"\n"];
+        [ctx->body insertAttributedString:nl atIndex:pos];
+        [nl release];
+    }
+}
+
 /* class/id名にナビゲーション由来と分かる特徴的な語を含む要素を除外する。
  * <nav>タグを使わずdivでメニューを組んでいるサイト(FNN等)向けの対策。
  * "nav"や"header"のような一般的すぎる語は記事本文側のクラス名(例:
  * article-header)を誤って除外してしまう恐れがあるため避け、
- * 実サイトで確認できた"gnav"のような誤検知の少ない語に絞っている。 */
+ * 実サイトで確認できた"gnav"のような誤検知の少ない語に絞っている。
+ * BrandText/OwnedAd/SuperBanner/SideLink/in-feed-Nativeは、ITmedia等が
+ * 使っているGoogle Ad Manager系の広告枠class/idで実サイトで確認した。 */
 static BOOL PWRHasNavigationLikeClass(xmlNode *node) {
     static const char *keywords[] = {
-        "gnav", "globalnav", "global-nav", "breadcrumb", "pankuzu", "drawer", "hamburger"
+        "gnav", "navi", "globalnav", "global-nav", "breadcrumb", "pankuzu", "drawer", "hamburger",
+        "related", "sns-share", "pagetop",
+        "BrandText", "OwnedAd", "SuperBanner", "SideLink", "in-feed-Native",
+        "ranking-link", "related-article", "relation-link", "recommend-media",
+        "mailmagazine", "comment-input", "CommentWidget", "p-header"
     };
-    static const int keywordCount = 7;
+    static const int keywordCount = 24;
     static const char *attrNames[] = {"class", "id"};
     static const int attrCount = 2;
     int a, k;
@@ -327,6 +357,32 @@ static BOOL PWRHasNavigationLikeClass(xmlNode *node) {
         }
         xmlFree(val);
     }
+
+    /* Yahoo! JAPAN独自のクリック計測属性(実サイトのHTMLで確認:
+     * _cl_vmodule:header/gnavi/fnavi/snavi/toplink/tool/related/pagetop等)。
+     * Yahoo!のclass名はビルドのたびに変わるハッシュ値(styled-components製)
+     * で全く当てにならない一方、この属性の値は意味のある固定語で、かつ
+     * 記事本文側では別の語彙(detail/accr/sf等)が使われることを確認済み
+     * なので、"header"のようなclass/idでは避けている単体では汎用的すぎる
+     * 語もここでは"vmodule:"付きで安全に使える。他サイトにはまず
+     * 存在しない属性なので、ここでの判定が他サイトへ影響することもない。 */
+    xmlChar *clParams = xmlGetProp(node, (const xmlChar *)"data-cl-params");
+    if (clParams) {
+        static const char *clKeywords[] = {
+            "vmodule:header", "vmodule:gnavi", "vmodule:fnavi", "vmodule:snavi",
+            "vmodule:toplink", "vmodule:tool", "vmodule:related", "vmodule:pagetop",
+            "vmodule:search", "vmodule:message"
+        };
+        static const int clKeywordCount = 10;
+        for (k = 0; k < clKeywordCount; k++) {
+            if (strcasestr((const char *)clParams, clKeywords[k])) {
+                xmlFree(clParams);
+                return YES;
+            }
+        }
+        xmlFree(clParams);
+    }
+
     return NO;
 }
 
@@ -475,14 +531,24 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
 
     /* 中身ごと無視するタグ。
      * <header>は記事タイトルを内包しているサイトもあるため対象外にしている。
-     * (ナビゲーションが多いポータルサイト等ではまだノイズが残りうる) */
+     * (ナビゲーションが多いポータルサイト等ではまだノイズが残りうる)
+     * svg/video/audio/object/embed/canvas/mapはテキストを持たず、特に
+     * アイコンスプライト用のsvgは内部に数百のpath/g要素を抱えることが
+     * あるため、丸ごと読み飛ばして無駄な走査を避ける。 */
     if (xmlStrcasecmp(name, (const xmlChar *)"script") == 0 ||
         xmlStrcasecmp(name, (const xmlChar *)"style") == 0 ||
         xmlStrcasecmp(name, (const xmlChar *)"head") == 0 ||
         xmlStrcasecmp(name, (const xmlChar *)"noscript") == 0 ||
         xmlStrcasecmp(name, (const xmlChar *)"iframe") == 0 ||
         xmlStrcasecmp(name, (const xmlChar *)"nav") == 0 ||
-        xmlStrcasecmp(name, (const xmlChar *)"footer") == 0) {
+        xmlStrcasecmp(name, (const xmlChar *)"footer") == 0 ||
+        xmlStrcasecmp(name, (const xmlChar *)"svg") == 0 ||
+        xmlStrcasecmp(name, (const xmlChar *)"video") == 0 ||
+        xmlStrcasecmp(name, (const xmlChar *)"audio") == 0 ||
+        xmlStrcasecmp(name, (const xmlChar *)"object") == 0 ||
+        xmlStrcasecmp(name, (const xmlChar *)"embed") == 0 ||
+        xmlStrcasecmp(name, (const xmlChar *)"canvas") == 0 ||
+        xmlStrcasecmp(name, (const xmlChar *)"map") == 0) {
         return;
     }
     if (PWRHasNavigationLikeClass(node)) {
@@ -626,20 +692,27 @@ static void PWRAppendNode(xmlNode *node, PWRWalkContext *ctx) {
                        xmlStrcasecmp(name, (const xmlChar *)"h5") == 0 ||
                        xmlStrcasecmp(name, (const xmlChar *)"h6") == 0;
 
-        if (isBlock) {
-            PWREnsureSeparation(ctx);
-        }
-        if (isListItem) {
-            PWRAppendPlain(PWRJPStr("・ "), ctx);
-        }
-
         /* div/article/section/ul/a/span/strongなどはここに落ちてきて、
          * 透過的なコンテナとして子要素をそのまま辿るだけになる */
+        unsigned int before = [ctx->body length];
         PWRAppendChildren(node, ctx);
+        unsigned int after = [ctx->body length];
+
+        /* 中身がナビ/広告判定で丸ごと除去され実質空になった場合、「・」や
+         * 段落の区切りだけが残ってしまう(例: Yahoo!のヘッダーメニューの
+         * ようにテキストにだけ計測用属性が付いているケース)。実際に
+         * 何か追加された時だけ、前後の区切りを後から挿入する。 */
+        if (after == before) {
+            return;
+        }
 
         if (isListItem) {
+            NSAttributedString *bullet = [[NSAttributedString alloc] initWithString:PWRJPStr("・ ")];
+            [ctx->body insertAttributedString:bullet atIndex:before];
+            [bullet release];
             PWRAppendPlain(@"\n", ctx);
         } else if (isBlock) {
+            PWRInsertSeparationAt(ctx, before);
             PWRAppendPlain(@"\n\n", ctx);
         }
     }

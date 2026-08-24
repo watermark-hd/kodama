@@ -89,7 +89,11 @@
         @"-L",                  /* リダイレクト追跡 */
         @"-D", headerFilePath,  /* レスポンスヘッダの書き出し先 */
         @"--max-time", @"30",
-        @"-A", @"Kodama/0.1 (Mac OS X 10.4 PowerPC)",
+        /* サイト側の「対応ブラウザではありません」的な出し分け・警告を
+         * 避けるため、モダンなFirefoxを名乗る。ダウンロード判定は
+         * レスポンスヘッダ(Content-Disposition/Content-Type)ベースで
+         * UAには依存しないため、この偽装が既存機能に影響することはない。 */
+        @"-A", @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/121.0",
         [url absoluteString],
         nil]];
 
