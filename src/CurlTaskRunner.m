@@ -5,12 +5,41 @@
 @interface CurlTaskRunner (PWRPrivate)
 - (void)finalizeIfReady;
 - (void)parseResponseHeaders;
++ (NSString *)bundledCurlPath;
++ (NSString *)bundledCABundlePath;
 @end
 
 @implementation CurlTaskRunner
 
+/* アプリに同梱したcurl(LibreSSL静的リンク・モダンTLS対応)のパス。
+ * 実行権限が無い/存在しない場合はnil。GUI無しのCLIテスト時は
+ * mainBundleにResourcesが無いため自然にnilになりシステム探索へ回る。 */
++ (NSString *)bundledCurlPath {
+    NSString *path = [[NSBundle mainBundle] pathForResource:@"curl" ofType:nil];
+    if (path && [[NSFileManager defaultManager] isExecutableFileAtPath:path]) {
+        return path;
+    }
+    return nil;
+}
+
+/* 同梱curlに渡すCA証明書(cacert.pem)のパス。無ければnil。 */
++ (NSString *)bundledCABundlePath {
+    NSString *path = [[NSBundle mainBundle] pathForResource:@"cacert" ofType:@"pem"];
+    if (path && [[NSFileManager defaultManager] isReadableFileAtPath:path]) {
+        return path;
+    }
+    return nil;
+}
+
 + (NSString *)detectCurlPath {
     NSFileManager *fm = [NSFileManager defaultManager];
+
+    /* まず同梱版を優先。Tiger素の環境(MacPorts/Tigerbrew無し)でも
+     * 「ダウンロードして起動するだけ」で動かすため。 */
+    NSString *bundled = [self bundledCurlPath];
+    if (bundled) {
+        return bundled;
+    }
 
     NSArray *candidates = [NSArray arrayWithObjects:
         @"/opt/local/bin/curl",   /* MacPorts */
@@ -84,7 +113,8 @@
 
     task = [[NSTask alloc] init];
     [task setLaunchPath:curlPath];
-    [task setArguments:[NSArray arrayWithObjects:
+
+    NSMutableArray *args = [NSMutableArray arrayWithObjects:
         @"-sS",                 /* サイレント、ただしエラーは表示 */
         @"-L",                  /* リダイレクト追跡 */
         @"-D", headerFilePath,  /* レスポンスヘッダの書き出し先 */
@@ -94,8 +124,22 @@
          * レスポンスヘッダ(Content-Disposition/Content-Type)ベースで
          * UAには依存しないため、この偽装が既存機能に影響することはない。 */
         @"-A", @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/121.0",
-        [url absoluteString],
-        nil]];
+        nil];
+
+    /* 同梱版curlを使う場合は、システムにCA証明書ストアが無い
+     * (Tiger素の環境)可能性が高いので同梱のcacert.pemを明示的に渡す。
+     * MacPorts/Tigerbrew等のシステムcurlにフォールバックした場合は、
+     * そちら側のCAストアを尊重して--cacertは渡さない。 */
+    if ([curlPath isEqualToString:[CurlTaskRunner bundledCurlPath]]) {
+        NSString *caBundle = [CurlTaskRunner bundledCABundlePath];
+        if (caBundle) {
+            [args addObject:@"--cacert"];
+            [args addObject:caBundle];
+        }
+    }
+
+    [args addObject:[url absoluteString]];
+    [task setArguments:args];
 
     NSPipe *outPipe = [NSPipe pipe];
     [task setStandardOutput:outPipe];

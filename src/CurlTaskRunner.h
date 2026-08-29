@@ -39,9 +39,12 @@
     BOOL responseIsAttachment;
 }
 
-/* MacPorts/Tigerbrew配下などから、使えるcurlバイナリのパスを探す。
- * 見つからなければnilを返す(その場合はシステム標準curlのTLSが
- * 古く、モダンなHTTPSサイトの取得に失敗する可能性が高い) */
+/* 使えるcurlバイナリのパスを探す。優先順位は
+ *   1. アプリ同梱版(Contents/Resources/curl、LibreSSL静的リンク)
+ *   2. /opt/local/bin/curl (MacPorts)
+ *   3. /usr/local/bin/curl (Tigerbrew/手動)
+ *   4. Tigerbrewのportable-curl
+ * 見つからなければnilを返す(通常は同梱版があるので発生しない)。 */
 + (NSString *)detectCurlPath;
 
 - (id)initWithDelegate:(id<CurlTaskRunnerDelegate>)aDelegate;

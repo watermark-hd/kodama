@@ -32,9 +32,12 @@ WebKitを使わず、記事本文を構造化して読みやすく表示する�
 ### 動作要件
 
 - Mac OS X 10.4 (Tiger)、PowerPC G3/G4/G5
-- モダンなHTTPS通信のために、[Tigerbrew](https://github.com/mistydemeo/tigerbrew)
-  または MacPorts で導入した新しい`curl`が必要です。Tiger標準のシステムcurl
-  (OpenSSLが古い)では現代のTLS1.2/1.3サイトへの接続にほぼ失敗します。
+- モダンなHTTPS(TLS1.2/1.3)通信用の`curl`(LibreSSL静的リンク・PPC)を
+  アプリに同梱しているため、追加のインストールは不要です。Tiger標準の
+  システムcurl(OpenSSLが古い)は使いません。
+- MacPorts / Tigerbrew で新しい`curl`を導入済みの場合は、同梱版が使えない
+  ときのフォールバックとして自動的に利用します(`/opt/local/bin/curl` →
+  `/usr/local/bin/curl` の順)。
 
 ### ビルド方法
 
@@ -86,9 +89,12 @@ the goal is to stay usable even on a 450MHz G3.
 ### Requirements
 
 - Mac OS X 10.4 (Tiger), PowerPC G3/G4/G5
-- A modern `curl` binary installed via [Tigerbrew](https://github.com/mistydemeo/tigerbrew)
-  or MacPorts, needed for real HTTPS support. Tiger's stock system `curl` ships
-  with an ancient OpenSSL that fails against almost every modern TLS 1.2/1.3 site.
+- No extra install needed: a modern `curl` (PPC, statically linked against
+  LibreSSL) is bundled inside the app for real TLS 1.2/1.3 HTTPS. Tiger's stock
+  system `curl` (ancient OpenSSL) is not used.
+- If you already have a newer `curl` from MacPorts / Tigerbrew, it is used
+  automatically as a fallback when the bundled copy is unavailable
+  (`/opt/local/bin/curl`, then `/usr/local/bin/curl`).
 
 ### Building
 

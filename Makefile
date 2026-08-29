@@ -30,7 +30,8 @@ CURL_TEST_SOURCES = src/CurlTaskRunner.m src/PWRLocalization.m tools/curl_test.m
 
 all: app
 
-app: $(MACOS_DIR)/$(APP_NAME) $(CONTENTS)/Info.plist $(RES_DIR)/Kodama.icns
+app: $(MACOS_DIR)/$(APP_NAME) $(CONTENTS)/Info.plist $(RES_DIR)/Kodama.icns \
+     $(RES_DIR)/curl $(RES_DIR)/cacert.pem
 
 $(MACOS_DIR)/$(APP_NAME): $(OBJECTS)
 	@mkdir -p $(MACOS_DIR)
@@ -41,6 +42,18 @@ $(CONTENTS)/Info.plist: Resources/Info.plist
 	cp $< $@
 
 $(RES_DIR)/Kodama.icns: Resources/Kodama.icns
+	@mkdir -p $(RES_DIR)
+	cp $< $@
+
+# モダンなHTTPS(TLS1.2/1.3)用にビルドしたcurl(LibreSSL静的リンク・PPC)を
+# アプリに同梱する。Tiger素の環境ではMacPorts/Tigerbrewが無いため、
+# CurlTaskRunnerはまずこの同梱版を使う。cacert.pemはそのCA証明書。
+$(RES_DIR)/curl: Resources/curl
+	@mkdir -p $(RES_DIR)
+	cp $< $@
+	chmod 755 $@
+
+$(RES_DIR)/cacert.pem: Resources/cacert.pem
 	@mkdir -p $(RES_DIR)
 	cp $< $@
 
