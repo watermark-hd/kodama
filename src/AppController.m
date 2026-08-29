@@ -253,7 +253,7 @@
 - (void)aboutAction:(id)sender {
     NSMutableDictionary *options = [NSMutableDictionary dictionary];
     [options setObject:PWRJPStr("コダマ (Kodama)") forKey:@"ApplicationName"];
-    [options setObject:@"0.2" forKey:@"ApplicationVersion"];
+    [options setObject:@"0.2.1" forKey:@"ApplicationVersion"];
 
     /* PPC Mac利用者は国内より海外の方が多いと見込み、Aboutパネルの説明文は
      * 常に日英併記にする(UI言語設定とは独立) */
